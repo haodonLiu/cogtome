@@ -75,15 +75,17 @@ enum StructureCommands {
 }
 
 fn skills_dir() -> SkillsDir {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    SkillsDir::new(PathBuf::from(&home).join("cogtome-demo/skills"))
+    let path = std::env::var("COGTOME_SKILLS_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("skills"));
+    SkillsDir::new(path)
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     let skills = skills_dir();
-    let runner = UnitRunner::new(skills.clone());
+    let runner = UnitRunner::new(skills.clone(), 30); // 30s default timeout
 
     match cli.command {
         // ------------------------------------------------------------------

@@ -5,6 +5,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::Path;
+use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
@@ -15,11 +16,12 @@ use tokio::process::Command;
 #[derive(Debug, Clone)]
 pub struct UnitRunner {
     skills: SkillsDir,
+    timeout_secs: u64,
 }
 
 impl UnitRunner {
-    pub fn new(skills: SkillsDir) -> Self {
-        Self { skills }
+    pub fn new(skills: SkillsDir, timeout_secs: u64) -> Self {
+        Self { skills, timeout_secs }
     }
 
     /// 调用 Unit，返回 (stdout_json, exit_code)
@@ -41,7 +43,13 @@ impl UnitRunner {
             stdin.write_all(input.to_string().as_bytes()).await?;
         }
 
-        let output = child.wait_with_output().await?;
+        let output = tokio::time::timeout(
+            Duration::from_secs(self.timeout_secs),
+            child.wait_with_output(),
+        )
+        .await
+        .with_context(|| format!("Unit '{}' timed out after {}s", name, self.timeout_secs))??;
+
         let exit_code = output.status.code().unwrap_or(-1);
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
