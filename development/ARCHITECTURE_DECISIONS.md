@@ -229,3 +229,96 @@ foreach:
 **如果不允许：** 所有需要的变量必须在 `over` 中传入，外部变量不可引用。
 
 **建议：** 允许引用，但声明为"快照"语义——迭代开始前的值，迭代过程中不变。
+
+### 快照语义的三个边界情况（实现约束）
+
+**1. 并发一致性**
+```rust
+// 快照必须在迭代开始前一次性捕获（Arc 引用，O(1)）
+let snapshot = Arc::new(steps.clone());
+for item in list {
+    let config = snapshot.get("b"); // 永远一致
+}
+```
+
+**2. 禁止修改外部状态**
+foreach 内部维护局部 scope，迭代结束后通过 `aggregate` 显式输出到外部。禁止在 foreach 内部覆盖外部 steps。
+
+**3. 内存优化**
+```rust
+struct StepState {
+    data: Arc<serde_json::Value>, // Arc::clone = O(1)
+}
+```
+
+### Rust 状态机草案（执行引擎核心）
+
+```rust
+enum Node {
+    Unit(UnitCall),
+    Foreach(ForeachBlock),
+    If(IfBranch),
+    Parallel(ParallelBlock),
+}
+
+struct ExecutionContext {
+    global_steps: HashMap<String, Arc<Value>>, // 外部 steps（只读快照）
+    local_steps: HashMap<String, Value>,        // 当前 scope 内新产生
+    params: Value,
+}
+
+impl MotifEngine {
+    async fn execute_node(&self, node: &Node, ctx: &mut ExecutionContext) -> Result<Value> {
+        match node {
+            Node::Foreach(block) => {
+                // 1. 计算列表
+                let list = eval_expression(&block.over, ctx)?;
+                
+                // 2. 安全检查
+                if items.len() > block.max_iterations {
+                    return Err(Error::MaxIterationsExceeded);
+                }
+                
+                // 3. 快照外部状态
+                let snapshot = Arc::new(ctx.global_steps.clone());
+                
+                // 4. 逐个迭代
+                for (idx, item) in items.iter().enumerate() {
+                    let mut child_ctx = ExecutionContext {
+                        global_steps: (*snapshot).clone(),
+                        local_steps: HashMap::new(),
+                        params: ctx.params.clone(),
+                    };
+                    child_ctx.local_steps.insert(block.var_name.clone(), item.clone());
+                    child_ctx.local_steps.insert("__index".to_string(), json!(idx));
+                    
+                    // 执行子 flow...
+                }
+                
+                // 5. 聚合
+                apply_aggregate(&block.aggregate, &iteration_results)
+            }
+        }
+    }
+}
+```
+
+### 变量解析优先级链
+
+```rust
+fn resolve_variable(name: &str, ctx: &ExecutionContext) -> Option<Value> {
+    // 1. 当前迭代变量（item）
+    ctx.local_steps.get(name)
+    // 2. 当前局部 steps（同一 flow 内前面节点）
+    // 3. 快照中的外部 steps（只读）
+    // 4. 用户输入 params
+}
+```
+
+### 三个实现细节决策
+
+| 决策项 | 选择 | 理由 |
+|--------|------|------|
+| **错误策略** | `fail_fast` 默认，`continue` 可选 | 简单清晰，Phase 1 默认安全 |
+| **聚合语法** | `map` 形式，`mode: array` 默认 | 更灵活，可表达复杂映射 |
+| **break/continue** | Phase 1 不实现 | 用 `if` 条件包裹 unit 达到同样效果 |
