@@ -1,0 +1,19 @@
+name: text-transform
+type: motif
+units_required: [text-uppercase, text-reverse]
+
+flow:
+  - name: upper
+    unit: text-uppercase
+    input:
+      text: "${params.text}"
+
+  - name: rev
+    unit: text-reverse
+    input:
+      text: "${params.text}"
+
+return:
+  upper: "${steps.upper.output.result}"
+  reversed: "${steps.rev.output.result}"
+  combined: "${steps.upper.output.result} | ${steps.rev.output.result}"

@@ -1,0 +1,24 @@
+name: text-pipeline
+type: structure
+
+motifs:
+  - name: text-transform
+
+input_schema:
+  type: object
+  required: [text]
+  properties:
+    text:
+      type: string
+
+output_schema:
+  type: object
+  properties:
+    upper:
+      type: string
+    reversed:
+      type: string
+    combined:
+      type: string
+
+resources: {}
