@@ -1,9 +1,11 @@
+mod config;
 mod context;
 mod discovery;
 mod engine;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use config::CogtomeConfig;
 use discovery::SkillsDir;
 use engine::{StructureExecutor, UnitRunner, YamlMotifEngine};
 use serde_json::Value;
@@ -74,18 +76,46 @@ enum StructureCommands {
     },
 }
 
-fn skills_dir() -> SkillsDir {
-    let path = std::env::var("COGTOME_SKILLS_DIR")
+fn resolve_skills_dir(config: &CogtomeConfig) -> PathBuf {
+    // 环境变量 > 配置文件 > 默认值
+    std::env::var("COGTOME_SKILLS_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("skills"));
-    SkillsDir::new(path)
+        .unwrap_or_else(|_| {
+            config
+                .paths
+                .units
+                .as_ref()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| {
+                    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("skills")
+                })
+        })
+}
+
+fn resolve_timeout(config: &CogtomeConfig) -> u64 {
+    std::env::var("COGTOME_TIMEOUT")
+        .and_then(|v| v.parse().map_err(|_| std::env::VarError::NotPresent))
+        .unwrap_or(config.units.defaults.timeout_secs)
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    let skills = skills_dir();
-    let runner = UnitRunner::new(skills.clone(), 30); // 30s default timeout
+
+    // 加载配置文件
+    let config = match CogtomeConfig::find() {
+        Some(path) => {
+            eprintln!("// Loading config from {}", path.display());
+            CogtomeConfig::load(&path)?
+        }
+        None => {
+            eprintln!("// No config file found, using defaults");
+            CogtomeConfig::default()
+        }
+    };
+
+    let skills = SkillsDir::new(resolve_skills_dir(&config));
+    let runner = UnitRunner::new(skills.clone(), resolve_timeout(&config));
 
     match cli.command {
         // ------------------------------------------------------------------
@@ -195,7 +225,6 @@ fn extract_first_structure(content: &str) -> Option<String> {
             }
             // 遇到非缩进行且不是 name 开头，说明 structures 块结束
             if !trimmed.is_empty() && !trimmed.starts_with("-") && !trimmed.starts_with("name:") && !trimmed.starts_with("path:") && !trimmed.starts_with("summary:") && !trimmed.starts_with("scenarios:") && !trimmed.starts_with("weight:") && !trimmed.starts_with("constraints:") {
-                // 继续扫描，因为可能有其他字段
                 continue;
             }
         }
