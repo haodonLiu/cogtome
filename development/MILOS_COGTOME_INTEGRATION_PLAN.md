@@ -88,14 +88,14 @@ Complex（入口）→ Structure（业务编排）→ Motif（工作链）→ Un
 | **Motif** | `~/.milos/motifs/*.yaml` | 编排多个 Unit（串行/并行） | `cogtome motif run <name>` |
 | **Unit** | `~/.milos/units/*/bin/*` | 原子执行，不可再分 | `cogtome unit run <name>` |
 
-### 2.3 与 OpenClaw 的关系
+### 2.3 与 OpenClaw 的关系（已确立边界）
 
 ```
 OpenClaw (Milos)
     │
     ├── 发现 Complex（~/.agents/skills/*/SKILL.md）
     │       ↓
-    │   匹配到 cogtome skill
+    │   匹配到 cogtome skill（OpenClaw 做决策）
     │       ↓
     └── 调用 COGTOME CLI（cogtome structure run xxx）
             │
@@ -107,6 +107,22 @@ OpenClaw (Milos)
                     ↓
                 写入 ~/.milos/logs/
 ```
+
+**⚠️ 关键边界约束（2026-04-24 确立）：**
+
+| 层级 | 职责 | 禁止 |
+|------|------|------|
+| **OpenClaw** | 意图理解、Complex 匹配、参数构造 | 不做执行 |
+| **COGTOME** | 执行指定 Complex忠实执行，不做路由 | 不做意图匹配 |
+
+**原则：**
+- "Agent 选 Complex，COGTOME 跑 Unit；Agent 做决策，COGTOME 做纪律"
+- Discovery = 能力目录（`ls` + `cat`），不是自动路由（`grep --smart`）
+- COGTOME 绝对不做匹配，否则产生双重 Agent 问题
+
+**简单任务解决方案：**
+- 提供 `--auto-complex` 注册机制
+- 写 1 个 Unit 脚本，Runtime 自动生成 Complex + Structure + Motif
 
 ---
 

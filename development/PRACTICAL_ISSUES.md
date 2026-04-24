@@ -443,6 +443,51 @@ Structure 测试：加载 manifest + mock Motif 结果
 
 ## 七、OpenClaw 集成问题
 
+### 7.1 Architecture Decision: COGTOME is Pure Execution Backend (2026-04-24)
+
+**Established Principle:**
+- COGTOME = pure execution backend (Option A)
+- OpenClaw = decision layer (intent matching, Complex selection)
+- Discovery = capability catalog (`ls` + `cat`), NOT auto-router (`grep --smart`)
+
+```
+OpenClaw (decision): Understand intent → Select Complex → Construct parameters
+     ↓
+COGTOME (execution): Receive → Parse Structure → Orchestrate Motif → Schedule Unit
+     ↓
+OS: Process, file, network
+```
+
+**Key rules:**
+- "Matching" must happen at upper layer
+- "Execution" must happen at COGTOME
+- If COGTOME also matches → dual Agent problem, debugging nightmare
+- Agent only sees Complex layer (10-20 items), never Unit (100+ items)
+
+### 7.2 Auto-Complex Mechanism (Solution to Simple Task Problem)
+
+**Problem:** Simple task like "extract numbers" requires 4 files (Complex + Structure + Motif + Unit)
+
+**Solution:** `auto-complex` registration:
+
+```bash
+cogtome register unit extract_numbers.py \
+  --name "extract_numbers" \
+  --description "从文本中提取所有数字" \
+  --input "text: string" \
+  --output "numbers: list[int]" \
+  --auto-complex  # Runtime auto-generates Complex + Structure + Motif
+```
+
+Runtime auto-generates:
+- Complex: SKILL.md with description
+- Structure: manifest.yaml with schema
+- Motif: YAML with direct_run flow
+
+Result: Developer writes 1 file, Agent sees 1 Complex - architecture stays unified.
+
+---
+
 ### 7.1 Skill 发现机制的差异
 
 **问题描述：**
