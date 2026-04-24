@@ -1,4 +1,5 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
+use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
@@ -128,49 +129,128 @@ impl SkillsDir {
     }
 }
 
-/// 从 SKILL.md 内容中提取 description 字段
-fn extract_description(content: &str) -> Option<String> {
-    let trimmed = content.trim();
-    if trimmed.starts_with("---") {
-        if let Some(end) = trimmed[3..].find("---") {
-            let front = &trimmed[3..3 + end];
-            return extract_yaml_field(front, "description");
-        }
-    }
-    extract_yaml_field(content, "description")
+/// Single structure entry in SKILL.md front matter
+#[derive(Debug, Clone, Deserialize)]
+pub struct StructureEntry {
+    pub name: String,
+    #[allow(dead_code)]
+    pub path: String,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub summary: String,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub scenarios: Vec<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub weight: f64,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub constraints: Vec<String>,
 }
 
-fn extract_yaml_field(text: &str, field: &str) -> Option<String> {
-    let prefix = format!("{}:", field);
-    let lines: Vec<&str> = text.lines().collect();
-    for (i, line) in lines.iter().enumerate() {
-        let trimmed = line.trim();
-        if trimmed.starts_with(&prefix) {
-            let val = trimmed[prefix.len()..].trim();
-            // 多行 | 格式
-            if val == "|" {
-                let mut result = String::new();
-                for j in (i + 1)..lines.len() {
-                    let l = lines[j];
-                    if l.starts_with("  ") || l.starts_with('\t') {
-                        if !result.is_empty() {
-                            result.push('\n');
-                        }
-                        result.push_str(l.trim_start_matches("  ").trim_start_matches('\t'));
-                    } else if l.trim().is_empty() {
-                        result.push('\n');
-                    } else {
-                        break;
-                    }
-                }
-                return Some(result.trim().to_string());
-            }
-            return Some(
-                val.trim_matches('"')
-                    .trim_matches('\'')
-                    .to_string(),
-            );
-        }
+/// Root YAML front matter in SKILL.md
+#[derive(Debug, Clone, Deserialize)]
+pub struct SkillMeta {
+    pub description: String,
+    #[serde(default)]
+    pub structures: Vec<StructureEntry>,
+}
+
+/// Extracts and parses YAML front matter from SKILL.md content.
+pub fn parse_skill_front_matter(content: &str) -> anyhow::Result<SkillMeta> {
+    let trimmed = content.trim();
+    anyhow::ensure!(trimmed.starts_with("---"), "Missing opening '---' delimiter");
+
+    let after_first = &trimmed[3..];
+
+    // Find closing --- at line boundary (not inside content)
+    // Use join approach to correctly handle \r\n line endings
+    let lines: Vec<&str> = after_first.lines().collect();
+    let end_idx = lines
+        .iter()
+        .position(|l| l.trim() == "---")
+        .ok_or_else(|| anyhow::anyhow!("Missing closing '---' delimiter"))?;
+
+    let front_matter = lines[..end_idx].join("\n");
+    let meta: SkillMeta = serde_yaml::from_str(&front_matter)
+        .context("Failed to parse YAML front matter")?;
+    Ok(meta)
+}
+
+/// Extracts description field from SKILL.md content.
+pub fn extract_description(content: &str) -> Option<String> {
+    parse_skill_front_matter(content).ok().map(|meta| meta.description)
+}
+
+/// Extracts first structure name from SKILL.md content.
+pub fn extract_first_structure(content: &str) -> Option<String> {
+    parse_skill_front_matter(content)
+        .ok()
+        .and_then(|meta| meta.structures.into_iter().next())
+        .map(|s| s.name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_front_matter_basic() {
+        let content = r#"---
+description: Test description
+structures:
+  - name: foo
+    path: structures/foo
+---
+# Content
+"#;
+        let meta = parse_skill_front_matter(content).unwrap();
+        assert_eq!(meta.description, "Test description");
+        assert_eq!(meta.structures.len(), 1);
+        assert_eq!(meta.structures[0].name, "foo");
     }
-    None
+
+    #[test]
+    fn test_front_matter_with_horizontal_rule_in_content() {
+        // Content containing --- should not confuse the parser
+        let content = r#"---
+description: Test
+---
+Some text with --- separator inside it
+"#;
+        let meta = parse_skill_front_matter(content).unwrap();
+        assert_eq!(meta.description, "Test");
+    }
+
+    #[test]
+    fn test_missing_front_matter() {
+        assert!(parse_skill_front_matter("No front matter").is_err());
+    }
+
+    #[test]
+    fn test_missing_closing_delimiter() {
+        let content = "---\ndescription: Test\n";
+        assert!(parse_skill_front_matter(content).is_err());
+    }
+
+    #[test]
+    fn test_extract_description_no_front_matter() {
+        // Breaking change: no front matter means None
+        assert!(extract_description("No front matter").is_none());
+    }
+
+    #[test]
+    fn test_extract_first_structure() {
+        let content = r#"---
+description: Test
+structures:
+  - name: my-structure
+    path: structures/my-structure
+  - name: another
+    path: structures/another
+---
+"#;
+        assert_eq!(extract_first_structure(content), Some("my-structure".to_string()));
+    }
 }

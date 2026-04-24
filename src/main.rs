@@ -6,7 +6,7 @@ mod engine;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use config::CogtomeConfig;
-use discovery::SkillsDir;
+use discovery::{extract_first_structure, SkillsDir};
 use engine::{StructureExecutor, UnitConcurrency, UnitRunner, YamlMotifEngine};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -247,26 +247,4 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
-}
-
-/// 从 SKILL.md 中提取 structures 列表下的第一个 structure 名称
-fn extract_first_structure(content: &str) -> Option<String> {
-    let mut in_structures = false;
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed == "structures:" {
-            in_structures = true;
-            continue;
-        }
-        if in_structures {
-            if trimmed.starts_with("- name:") {
-                return Some(trimmed[7..].trim().to_string());
-            }
-            // 遇到非缩进行且不是 name 开头，说明 structures 块结束
-            if !trimmed.is_empty() && !trimmed.starts_with("-") && !trimmed.starts_with("name:") && !trimmed.starts_with("path:") && !trimmed.starts_with("summary:") && !trimmed.starts_with("scenarios:") && !trimmed.starts_with("weight:") && !trimmed.starts_with("constraints:") {
-                continue;
-            }
-        }
-    }
-    None
 }
