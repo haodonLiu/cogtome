@@ -1,196 +1,196 @@
+<img src="cover.jpg" width="400" alt="COGTOME" />
+
+> English | [中文版本](README_CN.md)
+
 # COGTOME
 
-> **齿轮转动典籍，机械执行技艺。**
+> **Gears turn the tome, mechanics execute the craft.**
 >
-> COGTOME 是面向 Agent 的微型操作系统与执行运行时。
-> Agent 铸造齿轮（Unit），组装传动组（Motif），封装传动机构（Structure），收录领域典籍（Complex）。
-> Runtime 负责发现、编译、调度、执行与回收。
+> COGTOME is a micro operating system and execution runtime for AI Agents.
+> Agents forge gears (Unit), assemble gear trains (Motif), package drive trains (Structure), and compile domain tomes (Complex).
+> The Runtime handles discovery, compilation, scheduling, execution, and reclamation.
 
 [![Rust](https://img.shields.io/badge/Rust-1.70%2B-orange.svg)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ---
 
-## 目录
+## Table of Contents
 
-1. [什么是 COGTOME](#什么是-cogtome)
-2. [核心架构：四层模型](#核心架构四层模型)
-3. [快速开始](#快速开始)
-4. [完整教程：从零创建一个 Skill](#完整教程从零创建一个-skill)
-5. [接口规格](#接口规格)
-   - [Unit 契约](#unit-契约)
-   - [Motif 契约](#motif-契约)
-   - [Structure 契约](#structure-契约)
-   - [Complex 契约](#complex-契约)
-6. [CLI 参考](#cli-参考)
-7. [技术实现](#技术实现)
-8. [路线图](#路线图)
-9. [设计原则](#设计原则)
+1. [What is COGTOME](#what-is-cogtome)
+2. [Core Architecture: Four-Layer Model](#core-architecture-four-layer-model)
+3. [Quick Start](#quick-start)
+4. [Full Tutorial: Create a Skill from Scratch](#full-tutorial-create-a-skill-from-scratch)
+5. [Interface Specifications](#interface-specifications)
+6. [CLI Reference](#cli-reference)
+7. [Technical Implementation](#technical-implementation)
+8. [Roadmap](#roadmap)
+9. [Design Principles](#design-principles)
 
 ---
 
-## 什么是 COGTOME
+## What is COGTOME
 
-### 定位
+### Positioning
 
-COGTOME 不是框架，不是库，而是一个**独立的进程级运行时**——Agent 的微型操作系统。
+COGTOME is not a framework, not a library — it is an **independent process-level runtime**: a micro operating system for Agents.
 
-| 操作系统概念 | COGTOME 对应 |
-|-----------|------------|
-| 内核 | COGTOME Runtime (Rust) |
-| 用户进程 | Agent (LLM / 程序) |
-| 系统调用 | Unit (原子执行) |
-| 用户态函数 | Motif (编排逻辑) |
-| 应用程序 | Structure (业务封装) |
-| 应用商店 | Complex (领域门面) |
+| OS Concept | COGTOME Equivalent |
+|-----------|-------------------|
+| Kernel | COGTOME Runtime (Rust) |
+| User Process | Agent (LLM / Program) |
+| System Call | Unit (atomic execution) |
+| User-space Function | Motif (orchestration logic) |
+| Application | Structure (business encapsulation) |
+| App Store | Complex (domain facade) |
 | Shell | `cogtome` CLI |
 
-### 核心问题
+### The Core Problem
 
-Agent 需要调用外部工具（浏览器、数据库、API、文件处理），但直接 `subprocess` 会导致：
-- 进程管理混乱（泄漏、僵尸进程）
-- 无类型安全（输入输出无契约）
-- 无版本与发现机制
-- 无执行链路追踪
+Agents need to call external tools (browsers, databases, APIs, file processing), but direct `subprocess` calls cause:
+- Process management chaos (leaks, zombie processes)
+- No type safety (no input/output contracts)
+- No versioning or discovery mechanism
+- No execution trace tracking
 
-COGTOME 解决以上全部问题：Agent 只负责**编写业务逻辑**（Unit/Motif/Structure），Runtime 负责**一切基础设施**（进程、调度、日志、安全、发现）。
+COGTOME solves all of the above: Agents only write **business logic** (Unit/Motif/Structure), Runtime handles **all infrastructure** (processes, scheduling, logging, security, discovery).
 
-### 品牌隐喻
+### Brand Metaphors
 
-| 技术术语 | 品牌隐喻 | 含义 |
-|---------|---------|------|
-| Unit | 齿 (Cog) | 不可再分的原子执行体 |
-| Motif | 齿轮组 (Gear Assembly) | 齿的编排与组合 |
-| Structure | 传动机构 (Drive Train) | 完成业务目标的结构 |
-| Complex | 典籍 (Tome) | 收录传动机构的领域之书 |
-| 执行 | 啮合 (Engage) | 齿与齿咬合转动 |
+| Technical Term | Brand Metaphor | Meaning |
+|---------------|---------------|---------|
+| Unit | Cog (Tooth) | The indivisible atomic executor |
+| Motif | Gear Assembly | Orchestration and combination of cogs |
+| Structure | Drive Train | Structure that completes a business goal |
+| Complex | Tome | Domain book that holds drive trains |
+| Execution | Engage | Cogs mesh and turn |
 
 ---
 
-## 核心架构：四层模型
+## Core Architecture: Four-Layer Model
 
 ```
-Agent (自然语言意图)
+Agent (natural language intent)
         │
         ▼
 ┌─────────────────────┐
-│      Complex        │  ← Agent 唯一可见的层
-│   (领域典籍 Tome)    │     持有 description，参与自动发现
+│      Complex        │  ← Only layer visible to Agent
+│   (Domain Tome)     │     Holds description, participates in auto-discovery
 │                     │
 │  select_structure() │
 └─────────┬───────────┘
-          │ 加载 Structure
+          │ Load Structure
           ▼
 ┌─────────────────────┐
-│     Structure       │  ← 业务黑盒
-│  (传动机构 Drive)    │     manifest.yaml 定义契约
+│     Structure        │  ← Business black box
+│   (Drive Train)      │     manifest.yaml defines contracts
 │                     │
-│  execute(motifs)    │
+│  execute(motifs)   │
 └─────────┬───────────┘
-          │ 加载 Motif
+          │ Load Motif
           ▼
 ┌─────────────────────┐
-│       Motif         │  ← 编排逻辑
-│  (齿轮组 Assembly)   │     YAML / Python / Shell
+│       Motif          │  ← Orchestration logic
+│   (Gear Assembly)    │     YAML / Python / Shell
 │                     │
 │  unit.call()        │
 └─────────┬───────────┘
-          │ IPC 调用
+          │ IPC call
           ▼
 ┌─────────────────────┐
-│        Unit         │  ← 原子执行
-│      (齿 Cog)       │     独立进程，stdin/stdout JSON
+│        Unit          │  ← Atomic execution
+│      (Cog)          │     Independent process, stdin/stdout JSON
 │                     │
 │  fork + exec        │
 └─────────────────────┘
 ```
 
-### 层级总览
+### Layer Overview
 
-| 层级 | 名称 | Agent 可见？ | 本质 | 一句话定义 |
-|------|------|-------------|------|-----------|
-| **L4** | **Complex** | ✅ 唯一可见 | 领域门面 | 有 `description`，被自动发现 |
-| **L3** | **Structure** | ❌ 不可见 | 业务结构 | 完成具体目标的内部实现 |
-| **L2** | **Motif** | ❌ 不可见 | 工作链 | 编排 Unit 的内部逻辑 |
-| **L1** | **Unit** | ❌ 不可见 | 原子执行体 | 固定 CLI，最小执行一步 |
+| Layer | Name | Agent Visible? | Essence | One-line Definition |
+|-------|------|----------------|---------|---------------------|
+| **L4** | **Complex** | ✅ Only visible | Domain facade | Has `description`, auto-discovered |
+| **L3** | **Structure** | ❌ Invisible | Business structure | Internal implementation of a specific goal |
+| **L2** | **Motif** | ❌ Invisible | Work chain | Logic that orchestrates Units |
+| **L1** | **Unit** | ❌ Invisible | Atomic executor | Fixed CLI, minimal one step |
 
-### 核心纪律
+### Core Discipline
 
-1. **Unit 之间绝不相互调用**（Runtime 通过 `COGTOME_UNIT_MODE=1` 阻止）
-2. **Motif 之间不直接相互调用**（通过 Structure 组合）
-3. **Structure 不直接调用 Unit**（必须通过 Motif 编排）
-4. **Complex 是唯一有 `description` 的层**
-5. **所有跨层调用通过 Runtime IPC**（禁止裸 `subprocess`）
+1. **Units never call each other** (Runtime blocks via `COGTOME_UNIT_MODE=1`)
+2. **Motifs don't directly call each other** (composed via Structure)
+3. **Structure doesn't directly call Unit** (must go through Motif orchestration)
+4. **Complex is the only layer with `description`**
+5. **All cross-layer calls go through Runtime IPC** (no bare `subprocess`)
 
 ---
 
-## 快速开始
+## Quick Start
 
-### 1. 安装
+### 1. Install
 
 ```bash
-# 克隆仓库
+# Clone the repo
 git clone https://github.com/haodonLiu/cogtome.git
 cd cogtome
 
-# 编译
+# Build
 cargo build --release
 
-# 可选：安装到 PATH
+# Optional: install to PATH
 cp target/release/cogtome /usr/local/bin/
 ```
 
-### 2. 运行内置示例
+### 2. Run Built-in Examples
 
 ```bash
-# 发现所有 Complex
+# Discover all Complexes
 cogtome discover
 
-# 直接运行 Unit（原子能力）
+# Run Unit directly (atomic capability)
 cogtome unit run text-uppercase --input '{"text":"hello"}'
 # {"result": "HELLO"}
 
-# 运行 Motif（编排逻辑）
+# Run Motif (orchestrated logic)
 cogtome motif run text-transform --input '{"text":"hello"}'
 # {"upper": "HELLO", "reversed": "olleh"}
 
-# 运行 Structure（业务封装）
+# Run Structure (business encapsulation)
 cogtome structure run text-pipeline --input '{"text":"hello"}'
 # {"upper": "HELLO", "reversed": "olleh"}
 
-# 运行 Complex（完整领域 Skill）
+# Run Complex (complete domain Skill)
 cogtome run text-processing --input '{"text":"hello"}'
 # {"upper": "HELLO", "reversed": "olleh"}
 ```
 
-### 3. 项目结构
+### 3. Project Structure
 
 ```
 cogtome/
-├── src/                    # Runtime 源码（Rust）
-│   ├── main.rs             # CLI 入口
-│   ├── context.rs          # 执行上下文 + 变量解析
-│   ├── discovery.rs        # 目录扫描与发现
-│   └── engine.rs           # Unit 运行器 + Motif 引擎 + Structure 执行器
-├── skills/                 # Agent 创作目录（Runtime 不内置业务逻辑）
-│   ├── units/              # 原子执行体
-│   ├── motifs/             # 编排逻辑
-│   ├── structures/         # 业务结构
-│   └── <complex>/          # 领域典籍
+├── src/                    # Runtime source (Rust)
+│   ├── main.rs             # CLI entry point
+│   ├── context.rs          # Execution context + variable resolution
+│   ├── discovery.rs        # Directory scanning and discovery
+│   └── engine.rs           # Unit runner + Motif engine + Structure executor
+├── skills/                 # Agent authoring directory (Runtime has no built-in business logic)
+│   ├── units/              # Atomic executors
+│   ├── motifs/             # Orchestration logic
+│   ├── structures/         # Business structures
+│   └── <complex>/          # Domain tomes
 └── Cargo.toml
 ```
 
 ---
 
-## 完整教程：从零创建一个 Skill
+## Full Tutorial: Create a Skill from Scratch
 
-本教程演示 Agent 如何从零开始创建一个可运行的 Skill：文本处理流水线。
+This tutorial demonstrates how to create a runnable Skill from scratch: a text processing pipeline.
 
-### Step 1：铸造 Unit（编写原子能力）
+### Step 1: Forge a Unit (write atomic capability)
 
-Unit 是**任意 CLI 可执行文件**。Agent 用 Python、Bash、Go、Rust 都可以，只要遵守 stdin/stdout JSON 契约。
+A Unit is **any CLI executable**. Agents can use Python, Bash, Go, or Rust — as long as it follows the stdin/stdout JSON contract.
 
-创建目录和文件：
+Create the directory and file:
 
 ```bash
 mkdir -p skills/units/text-uppercase/bin
@@ -203,7 +203,7 @@ EOF
 chmod +x skills/units/text-uppercase/bin/text-uppercase
 ```
 
-再创建第二个 Unit：
+Create a second Unit:
 
 ```bash
 mkdir -p skills/units/text-reverse/bin
@@ -216,17 +216,17 @@ EOF
 chmod +x skills/units/text-reverse/bin/text-reverse
 ```
 
-**Unit 接口契约**：
-- **输入**：stdin 接收 UTF-8 JSON
-- **输出**：stdout 输出 UTF-8 JSON
-- **错误**：exit code 非 0，stderr 输出可读信息
-- **环境变量**：Runtime 自动注入 `COGTOME_EXECUTION_ID`、`COGTOME_TRACE_ID`、`COGTOME_UNIT_MODE=1`
+**Unit Interface Contract**:
+- **Input**: stdin receives UTF-8 JSON
+- **Output**: stdout outputs UTF-8 JSON
+- **Error**: exit code non-0, stderr outputs human-readable info
+- **Environment variables**: Runtime automatically injects `COGTOME_EXECUTION_ID`, `COGTOME_TRACE_ID`, `COGTOME_UNIT_MODE=1`
 
-### Step 2：编织 Motif（编排 Unit）
+### Step 2: Weave a Motif (orchestrate Units)
 
-Motif 回答一个问题：**"给定输入，按什么顺序调用哪些 Unit？"**
+Motif answers the question: **"Given input, in what order do we call which Units?"**
 
-Agent 编写 YAML 声明式 Motif：
+Agent writes a YAML declarative Motif:
 
 ```yaml
 # skills/motifs/text-transform.yaml
@@ -251,22 +251,22 @@ return:
   combined: "${steps.upper.output.result} | ${steps.rev.output.result}"
 ```
 
-**变量作用域**：
-- `${params.xxx}` —— Structure/Agent 传入的原始参数
-- `${steps.<name>.output.xxx}` —— 某一步的 stdout JSON 字段
-- `${steps.<name>.exit_code}` —— 某一步的退出码
-- `${env.xxx}` —— 环境变量
+**Variable Scopes**:
+- `${params.xxx}` — Original parameters passed by Structure/Agent
+- `${steps.<name>.output.xxx}` — stdout JSON field of a step
+- `${steps.<name>.exit_code}` — Exit code of a step
+- `${env.xxx}` — Environment variable
 
-**控制流**（当前 Demo 支持串行，完整版支持并行/条件）：
-- 默认串行执行
-- `parallel: <group>` —— 同组并发
-- `after: <group>` —— 等待组完成
-- `condition: "${expr}"` —— 条件执行
-- `on_error: <label>` —— 错误跳转
+**Control Flow** (Demo supports serial, full version supports parallel/conditional):
+- Default: serial execution
+- `parallel: <group>` — Same group concurrent
+- `after: <group>` — Wait for group completion
+- `condition: "${expr}"` — Conditional execution
+- `on_error: <label>` — Error jump
 
-### Step 3：组建 Structure（封装业务目标）
+### Step 3: Assemble a Structure (encapsulate business goal)
 
-Structure 是完成**一个具体业务目标**的黑盒。对外只暴露输入输出 Schema。
+Structure is a black box that completes **one specific business goal**. It only exposes input/output Schema externally.
 
 ```yaml
 # skills/structures/text-pipeline/manifest.yaml
@@ -292,29 +292,30 @@ output_schema:
 resources: {}
 ```
 
-**字段说明**：
-- `motifs`：该 Structure 使用的 Motif 列表，按顺序执行
-- `input_schema` / `output_schema`：JSON Schema，Runtime 自动校验
-- `resources`：资源需求（内存、网络、GPU），供调度器参考
-- `constraints`：约束条件（如 `webgl: true`），供 Complex 选择时参考
+**Field Description**:
+- `motifs`: List of Motifs used by this Structure, executed in order
+- `input_schema` / `output_schema`: JSON Schema, Runtime automatically validates
+- `resources`: Resource requirements (memory, network, GPU), for scheduler reference
+- `constraints`: Constraints (e.g. `webgl: true`), for Complex selection reference
 
-### Step 4：编纂 Complex（领域门面）
+### Step 4: Compile a Complex (domain facade)
 
-Complex 是**Agent 唯一可见的层**。它持有 `description`，被 Runtime 自动发现。
+Complex is **the only layer visible to the Agent**. It holds `description` and is auto-discovered by Runtime.
 
 ```yaml
 # skills/text-processing/SKILL.md
 ---
 name: text-processing
 description: |
-  文本处理领域。当任务涉及文本转换、格式化、大写/小写、反转、拼接、
-  简单字符串操作时，自动调用此 Skill。
+  Text processing domain. Automatically invoked when tasks involve text
+  transformation, formatting, upper/lower case, reversal, concatenation,
+  or simple string operations.
 
 structures:
   - name: text-pipeline
     path: structures/text-pipeline
-    summary: "标准文本处理流水线"
-    scenarios: ["文本大写", "文本反转", "字符串变换"]
+    summary: "Standard text processing pipeline"
+    scenarios: ["text uppercase", "text reversal", "string transformation"]
     weight: 1.0
 
 config:
@@ -323,75 +324,75 @@ config:
 ---
 ```
 
-**关键规则**：
-- 必须包含 `description`，否则不参与自动发现
-- `structures` 列表定义下辖的所有 Structure
-- `weight` 用于冲突解决（多个 Structure 匹配时的优先级）
-- `scenarios` 用于意图匹配的关键词扩展
+**Key Rules**:
+- Must include `description`, otherwise excluded from auto-discovery
+- `structures` list defines all Structures under this Complex
+- `weight` used for conflict resolution (priority when multiple Structures match)
+- `scenarios` used for intent matching keyword expansion
 
-### Step 5：验证与运行
+### Step 5: Validate and Run
 
 ```bash
-# 验证发现
+# Validate discovery
 cogtome discover
 # Found 1 Complex(es):
-#   text-processing  文本处理领域...
+#   text-processing  Text processing domain...
 
-# 运行
+# Run
 cogtome run text-processing --input '{"text":"hello"}'
 # {"upper": "HELLO", "reversed": "olleh"}
 ```
 
 ---
 
-## 接口规格
+## Interface Specifications
 
-### Unit 契约
+### Unit Contract
 
-#### 进程模型
+#### Process Model
 
 ```
-输入：stdin 接收 UTF-8 JSON
-输出：stdout 输出 UTF-8 JSON
-诊断：stderr 输出人类可读文本
-状态：exit code 0 = 成功，非 0 = 失败
+Input: stdin receives UTF-8 JSON
+Output: stdout outputs UTF-8 JSON
+Diagnostics: stderr outputs human-readable text
+Status: exit code 0 = success, non-0 = failure
 ```
 
-#### 退出码标准
+#### Exit Code Standards
 
-| Code | 含义 | Runtime 行为 |
-|------|------|-------------|
-| 0 | 成功 | 解析 stdout JSON，返回给上层 |
-| 1 | 输入错误 | 不可重试，报告输入问题 |
-| 2 | 处理异常 | 可重试 |
-| 3 | 依赖不可用 | 可重试，指数退避 |
-| 126 | 命令不可执行 | 不可重试，报告权限问题 |
-| 127 | 命令未找到 | 不可重试，报告 Unit 未安装 |
-| 130 | SIGINT | 可重试，用户中断或超时 |
-| 137 | SIGKILL | 可重试，OOM 或强制终止 |
+| Code | Meaning | Runtime Behavior |
+|------|---------|----------------|
+| 0 | Success | Parse stdout JSON, return to upper layer |
+| 1 | Input error | Not retryable, report input problem |
+| 2 | Processing exception | Retryable |
+| 3 | Dependency unavailable | Retryable, exponential backoff |
+| 126 | Command not executable | Not retryable, report permission problem |
+| 127 | Command not found | Not retryable, report Unit not installed |
+| 130 | SIGINT | Retryable, user interrupt or timeout |
+| 137 | SIGKILL | Retryable, OOM or forced termination |
 
-#### 环境变量
+#### Environment Variables
 
 ```bash
-COGTOME_UNIT_MODE=1       # 禁止 Unit 内部再调 Unit
-COGTOME_EXECUTION_ID=xxx  # 本次执行唯一 ID
-COGTOME_TRACE_ID=xxx      # 分布式追踪 ID
-COGTOME_LOG_LEVEL=info    # 日志级别
-COGTOME_TIMEOUT_MS=30000  # 剩余超时毫秒数
+COGTOME_UNIT_MODE=1       # Prohibit Unit from calling Unit internally
+COGTOME_EXECUTION_ID=xxx  # Unique ID for this execution
+COGTOME_TRACE_ID=xxx      # Distributed trace ID
+COGTOME_LOG_LEVEL=info    # Log level
+COGTOME_TIMEOUT_MS=30000  # Remaining timeout in milliseconds
 ```
 
-#### 目录模板
+#### Directory Template
 
 ```
 units/<unit-name>/
-├── SKILL.md          # CLI 契约声明（无 description）
-├── errors.yaml       # 错误模式库（可选）
-└── bin/<unit-name>   # 可执行入口（chmod +x）
+├── SKILL.md          # CLI contract declaration (no description)
+├── errors.yaml       # Error pattern library (optional)
+└── bin/<unit-name>   # Executable entry point (chmod +x)
 ```
 
-### Motif 契约
+### Motif Contract
 
-#### YAML 声明式 Motif
+#### YAML Declarative Motif
 
 ```yaml
 name: data-pipeline
@@ -415,7 +416,7 @@ return:
   data: "${steps.parse.output.json_obj}"
 ```
 
-#### Python Motif（复杂逻辑）
+#### Python Motif (complex logic)
 
 ```python
 from agents_sdk import Motif, unit, Context
@@ -430,9 +431,9 @@ class DataPipelineMotif(Motif):
         return parsed.data
 ```
 
-**关键**：Python Motif 中的 `unit.call()` 通过 Unix Socket IPC 与 Runtime 通信，**不直接创建进程**。
+**Key**: `unit.call()` in Python Motif communicates with Runtime via Unix Socket IPC, **does not directly create processes**.
 
-### Structure 契约
+### Structure Contract
 
 #### manifest.yaml
 
@@ -463,9 +464,9 @@ constraints:
   webgl: false
 ```
 
-#### 自定义执行器（可选）
+#### Custom Executor (optional)
 
-若 `structures/<name>/structure.py` 存在，Runtime 加载并执行：
+If `structures/<name>/structure.py` exists, Runtime loads and executes it:
 
 ```python
 from agents_sdk import Structure, motif, Context
@@ -476,9 +477,9 @@ class TextPipelineStructure(Structure):
         return m.run(ctx, **params)
 ```
 
-若无 `structure.py`，Runtime 使用**默认执行器**：按 `manifest.motifs` 顺序加载并执行 Motif。
+If no `structure.py`, Runtime uses **default executor**: loads and executes Motifs in `manifest.motifs` order.
 
-### Complex 契约
+### Complex Contract
 
 #### SKILL.md
 
@@ -486,13 +487,13 @@ class TextPipelineStructure(Structure):
 ---
 name: web-automation
 description: |
-  浏览器自动化领域...
+  Browser automation domain...
 
 structures:
   - name: lightpanda
     path: structures/lightpanda
-    summary: "基于原生引擎的高速无头浏览器"
-    scenarios: ["静态页面抓取", "表单自动化"]
+    summary: "High-speed headless browser based on native engine"
+    scenarios: ["static page scraping", "form automation"]
     constraints: { webgl: false }
     weight: 0.8
 
@@ -503,7 +504,7 @@ config:
 ---
 ```
 
-#### 自定义选择器（可选）
+#### Custom Selector (optional)
 
 ```python
 from agents_sdk import Complex, Structure
@@ -517,127 +518,127 @@ class WebAutomationComplex(Complex):
 
 ---
 
-## CLI 参考
+## CLI Reference
 
 ```bash
-# 发现与浏览
-cogtome discover                              # 扫描所有 Complex
-cogtome skill list                            # 列出 Complex
-cogtome skill show <name>                     # 查看 Complex 详情
-cogtome skill search <keyword>                # 模糊搜索
+# Discovery and browsing
+cogtome discover                              # Scan all Complexes
+cogtome skill list                           # List Complexes
+cogtome skill show <name>                    # View Complex details
+cogtome skill search <keyword>               # Fuzzy search
 
-# 调试层（开发者工具）
-cogtome unit list                             # 列出所有 Unit
-cogtome unit show <name>                      # 查看 Unit 契约
-cogtome unit run <name> --input <json>        # 直接运行 Unit
-cogtome unit run <name> --stdin               # 从 stdin 读入
+# Debug layer (developer tools)
+cogtome unit list                            # List all Units
+cogtome unit show <name>                     # View Unit contract
+cogtome unit run <name> --input <json>      # Run Unit directly
+cogtome unit run <name> --stdin              # Read from stdin
 
-cogtome motif list                            # 列出所有 Motif
-cogtome motif run <name> --input <json>       # 运行 Motif
+cogtome motif list                           # List all Motifs
+cogtome motif run <name> --input <json>     # Run Motif
 
-cogtome structure list                        # 列出所有 Structure
-cogtome structure validate <name>             # 校验 manifest
-cogtome structure run <name> --input <json>   # 运行 Structure
+cogtome structure list                       # List all Structures
+cogtome structure validate <name>            # Validate manifest
+cogtome structure run <name> --input <json> # Run Structure
 
-# 执行层（Agent 使用）
-cogtome run <complex> --input <json>          # 运行 Complex
-cogtome run <complex> --input <json> --dry-run # 编译计划但不执行
+# Execution layer (Agent usage)
+cogtome run <complex> --input <json>        # Run Complex
+cogtome run <complex> --input <json> --dry-run # Compile plan without executing
 
-# 日志与检查
-cogtome logs                                  # 列出今日执行
-cogtome logs --date 2026-04-24               # 查看历史
-cogtome inspect <execution-id> --tree         # 树形展示四层调用
+# Logs and inspection
+cogtome logs                                 # List today's executions
+cogtome logs --date 2026-04-24            # View history
+cogtome inspect <execution-id> --tree       # Tree view of four-layer call chain
 
-# 系统管理
-cogtome validate                              # 校验所有 Skill
-cogtome validate --fix                        # 自动修复常见问题
-cogtome daemon start                          # 启动常驻进程
+# System management
+cogtome validate                             # Validate all Skills
+cogtome validate --fix                       # Auto-fix common issues
+cogtome daemon start                         # Start daemon process
 cogtome daemon stop
 cogtome daemon status
 
-# 打包与分发（未来）
-cogtome pack ./my-skill/                      # 打包为 .cogtome 文件
-cogtome install my-skill.cogtome              # 安装 Skill
+# Packaging and distribution (future)
+cogtome pack ./my-skill/                     # Package as .cogtome file
+cogtome install my-skill.cogtome            # Install Skill
 ```
 
 ---
 
-## 技术实现
+## Technical Implementation
 
-### Runtime 模块（Rust）
+### Runtime Modules (Rust)
 
 ```
 src/
-├── main.rs                 # CLI 入口 (clap)
-│   ├── unit run            # 直接调用 UnitRunner
-│   ├── motif run           # 调用 YamlMotifEngine
-│   ├── structure run       # 调用 StructureExecutor
+├── main.rs                 # CLI entry point (clap)
+│   ├── unit run            # Direct UnitRunner invocation
+│   ├── motif run           # Invoke YamlMotifEngine
+│   ├── structure run       # Invoke StructureExecutor
 │   └── run                 # Complex → Structure → Motif → Unit
-├── context.rs              # 执行上下文 + 变量解析
+├── context.rs              # Execution context + variable resolution
 │   ├── ExecContext         # params + steps HashMap
 │   └── resolve_var()       # ${params} / ${steps} / ${env}
-├── discovery.rs            # 目录扫描与元数据发现
-│   ├── find_unit()         # 全局 → Complex 私有，优先级查找
+├── discovery.rs            # Directory scanning and metadata discovery
+│   ├── find_unit()         # Global → Complex private, priority search
 │   ├── find_motif()        # .yaml / .py / .sh
 │   ├── find_structure()    # manifest.yaml
-│   └── discover_complexes() # 扫描 SKILL.md
-└── engine.rs               # 核心执行引擎
+│   └── discover_complexes() # Scan SKILL.md
+└── engine.rs               # Core execution engine
     ├── UnitRunner          # tokio::process fork/exec
-    ├── YamlMotifEngine     # YAML 解析 + 串行调度
-    └── StructureExecutor   # manifest 加载 + Motif 链执行
+    ├── YamlMotifEngine     # YAML parsing + serial scheduling
+    └── StructureExecutor   # manifest loading + Motif chain execution
 ```
 
-### 执行流程
+### Execution Flow
 
 ```
 Agent Query
     │
     ▼
 ┌────────────────────────────────┐
-│ 1. Discovery                   │  扫描 ~/.agents/skills/*/SKILL.md
-│    构建 Complex 索引           │
+│ 1. Discovery                   │  Scan ~/.agents/skills/*/SKILL.md
+│    Build Complex index         │
 └────────┬───────────────────────┘
          │
          ▼
 ┌────────────────────────────────┐
-│ 2. Resolution                  │  描述相似度 / 约束匹配 / 权重排序
+│ 2. Resolution                  │  Description similarity / constraint matching / weight sorting
 │    Complex.select_structure()  │
 └────────┬───────────────────────┘
          │
          ▼
 ┌────────────────────────────────┐
 │ 3. Compilation                 │  Structure manifest → ExecutionPlan
-│    静态检查依赖完整性          │
+│    Static dependency check     │
 └────────┬───────────────────────┘
          │
          ▼
 ┌────────────────────────────────┐
-│ 4. Scheduling                  │  按 ExecutionStep 顺序执行
-│    • 串行：阻塞执行            │
-│    • 并行：tokio::spawn        │
-│    • 资源：acquire → release   │
-│    • 超时：tokio::timeout      │
+│ 4. Scheduling                 │  Execute in ExecutionStep order
+│    • Serial: blocking          │
+│    • Parallel: tokio::spawn    │
+│    • Resource: acquire → release│
+│    • Timeout: tokio::timeout   │
 └────────┬───────────────────────┘
          │
          ▼
 ┌────────────────────────────────┐
-│ 5. Validation                  │  校验 output_schema
-│    写日志索引 index.json       │
+│ 5. Validation                  │  Validate output_schema
+│    Write log index index.json  │
 └────────────────────────────────┘
 ```
 
-### 多语言 Motif 策略
+### Multi-Language Motif Strategy
 
-| 类型 | 扩展名 | 执行方式 | 状态 |
-|------|--------|---------|------|
-| YAML Motif | `.yaml` | Rust 原生解析 | ✅ 已实现 |
-| Python Motif | `.py` | 子进程 + IPC → Runtime | 🔮 Phase 2 |
+| Type | Extension | Execution | Status |
+|------|-----------|-----------|--------|
+| YAML Motif | `.yaml` | Rust native parsing | ✅ Implemented |
+| Python Motif | `.py` | Subprocess + IPC → Runtime | 🔮 Phase 2 |
 | Shell Motif | `.sh` | `tokio::process::Command` | 🔮 Phase 2 |
-| Rust Motif | `.so` | `libloading` 动态加载 | 🔮 Phase 4 |
+| Rust Motif | `.so` | `libloading` dynamic loading | 🔮 Phase 4 |
 
-### Python SDK IPC（未来）
+### Python SDK IPC (future)
 
-Python Motif 不直接 `subprocess.run`，而是通过 Unix Domain Socket 与 Runtime 通信：
+Python Motif does not directly `subprocess.run`, instead communicates with Runtime via Unix Domain Socket:
 
 ```python
 # agents_sdk/unit.py
@@ -647,62 +648,62 @@ class CogtomeClient:
         self.sock.connect(socket_path)
 
     def unit_call(self, name, input, ctx):
-        # 发送 JSON-RPC
+        # Send JSON-RPC
         ...
 ```
 
-这样既保留 Python 的灵活性，又获得 Rust 的进程管理性能。
+This preserves Python flexibility while gaining Rust process management performance.
 
 ---
 
-## 路线图
+## Roadmap
 
-### Phase 1：Core MVP ✅（当前）
+### Phase 1: Core MVP ✅ (Current)
 
-- [x] CLI 框架（unit / motif / structure / run / discover）
-- [x] UnitRunner：`tokio::process` + stdin/stdout JSON + 超时
-- [x] Discovery：扫描 `skills/` 目录树
-- [x] YamlMotifEngine：变量解析 + 串行执行
-- [x] StructureExecutor：manifest 加载 + Motif 链
-- [x] Complex 发现：SKILL.md 解析
+- [x] CLI framework (unit / motif / structure / run / discover)
+- [x] UnitRunner: `tokio::process` + stdin/stdout JSON + timeout
+- [x] Discovery: scan `skills/` directory tree
+- [x] YamlMotifEngine: variable resolution + serial execution
+- [x] StructureExecutor: manifest loading + Motif chain
+- [x] Complex discovery: SKILL.md parsing
 
-### Phase 2：Daemon 与并发
+### Phase 2: Daemon and Concurrency
 
-- [ ] `cogtome daemon`（Unix Socket + HTTP API）
-- [ ] 元数据缓存与热重载
-- [ ] Unit 进程预热池
-- [ ] 并行 Unit 调用（`unit.gather()`）
-- [ ] Python SDK IPC 客户端
-- [ ] YAML Motif：并行组 + 条件分支
+- [ ] `cogtome daemon` (Unix Socket + HTTP API)
+- [ ] Metadata cache and hot reload
+- [ ] Unit process warm pool
+- [ ] Parallel Unit calls (`unit.gather()`)
+- [ ] Python SDK IPC client
+- [ ] YAML Motif: parallel groups + conditional branching
 
-### Phase 3：资源管理与安全
+### Phase 3: Resource Management and Security
 
-- [ ] 资源型 Unit：`resource.acquire/release` + RAII Guard
-- [ ] WAL 崩溃恢复机制
-- [ ] Linux Landlock 文件系统隔离
-- [ ] seccomp-bpf 系统调用过滤
-- [ ] cgroups v2 资源限制
+- [ ] Resource Units: `resource.acquire/release` + RAII Guard
+- [ ] WAL crash recovery mechanism
+- [ ] Linux Landlock filesystem isolation
+- [ ] seccomp-bpf system call filtering
+- [ ] cgroups v2 resource limits
 
-### Phase 4：生态与优化
+### Phase 4: Ecosystem and Optimization
 
-- [ ] `cogtome pack/install` 打包分发
-- [ ] Registry / 中央仓库协议
-- [ ] Rust Motif 动态加载（`.so`）
-- [ ] Web UI 监控面板
-- [ ] 性能基准测试
-
----
-
-## 设计原则
-
-1. **Runtime 零业务逻辑**：COGTOME 二进制不内置任何 Unit。Agent 根据需求自行铸造。
-2. **Agent 创作自由**：Unit 可用任何语言编写；Motif 可用 YAML/Python/Shell；Structure 可纯声明或自定义执行器。
-3. **强契约**：所有跨层调用通过 Schema 校验（JSON Schema），输入输出类型安全。
-4. **进程隔离**：Unit 之间绝不相互调用，每个 Unit 是独立的 fork + exec。
-5. **可观测性**：每次执行生成完整的四层链路日志（JSON Lines），支持 `cogtome inspect --tree`。
+- [ ] `cogtome pack/install` packaging distribution
+- [ ] Registry / central repository protocol
+- [ ] Rust Motif dynamic loading (`.so`)
+- [ ] Web UI monitoring panel
+- [ ] Performance benchmarking
 
 ---
 
-## 许可证
+## Design Principles
+
+1. **Runtime has zero business logic**: COGTOME binary has no built-in Units. Agents forge them as needed.
+2. **Agent authoring freedom**: Units can be written in any language; Motifs in YAML/Python/Shell; Structures pure declarative or custom executor.
+3. **Strong contracts**: All cross-layer calls validated via Schema (JSON Schema), input/output type-safe.
+4. **Process isolation**: Units never call each other, each Unit is an independent fork + exec.
+5. **Observability**: Every execution generates complete four-layer chain logs (JSON Lines), supports `cogtome inspect --tree`.
+
+---
+
+## License
 
 MIT
