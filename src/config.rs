@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Deserialize)]
 pub struct CogtomeConfig {
     #[serde(default)]
+    #[allow(dead_code)]
     pub runtime: RuntimeConfig,
     #[serde(default)]
     pub paths: PathsConfig,
@@ -16,8 +17,10 @@ pub struct CogtomeConfig {
 #[derive(Debug, Deserialize, Default)]
 pub struct RuntimeConfig {
     #[serde(default = "default_max_iterations")]
+    #[allow(dead_code)]
     pub max_iterations: u32,
     #[serde(default = "default_max_iterations_hard")]
+    #[allow(dead_code)]
     pub max_iterations_hard: u32,
 }
 

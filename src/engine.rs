@@ -19,6 +19,7 @@ use tokio_util::sync::CancellationToken;
 #[derive(Debug, Clone)]
 pub struct UnitConcurrency {
     pub max_global: Option<u32>,
+    #[allow(dead_code)]
     pub max_per_host: Option<u32>,
     pub resource_key: Option<String>,
 }
@@ -37,16 +38,6 @@ pub struct UnitRunner {
 }
 
 impl UnitRunner {
-    pub fn new(skills: SkillsDir, timeout_secs: u64) -> Self {
-        Self {
-            skills,
-            timeout_secs,
-            concurrency_config: HashMap::new(),
-            resource_semaphores: Arc::new(HashMap::new()),
-            undeclared_semaphores: Arc::new(Mutex::new(HashMap::new())),
-        }
-    }
-
     pub fn new_with_config(skills: SkillsDir, timeout_secs: u64, concurrency_config: HashMap<String, UnitConcurrency>) -> Self {
         // Build resource semaphores from config
         let mut resource_semaphores: HashMap<String, Arc<Semaphore>> = HashMap::new();
@@ -175,10 +166,13 @@ impl UnitRunner {
 
 #[derive(Debug, Deserialize)]
 pub struct MotifManifest {
+    #[allow(dead_code)]
     pub name: String,
     #[serde(rename = "type")]
+    #[allow(dead_code)]
     pub kind: String,
     #[serde(default)]
+    #[allow(dead_code)]
     pub units_required: Vec<String>,
     pub flow: Vec<FlowStep>,
     #[serde(default, rename = "return")]
@@ -219,6 +213,7 @@ pub struct AggregateBlock {
     #[serde(default)]
     pub map: HashMap<String, String>,
     #[serde(default)]
+    #[allow(dead_code)]
     pub sum: Option<String>,
     #[serde(default)]
     pub join: Option<JoinConfig>,
@@ -243,6 +238,7 @@ pub enum AggregateMode {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct JoinConfig {
+    #[allow(dead_code)]
     pub expr: String,
     #[serde(default)]
     pub separator: String,
@@ -709,13 +705,17 @@ fn empty_aggregate(aggregate: &AggregateBlock) -> Value {
 
 #[derive(Debug, Deserialize)]
 pub struct StructureManifest {
+    #[allow(dead_code)]
     pub name: String,
     #[serde(rename = "type")]
+    #[allow(dead_code)]
     pub kind: String,
     pub motifs: Vec<MotifRef>,
     #[serde(default)]
+    #[allow(dead_code)]
     pub input_schema: Option<Value>,
     #[serde(default)]
+    #[allow(dead_code)]
     pub output_schema: Option<Value>,
 }
 

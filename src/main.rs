@@ -77,9 +77,10 @@ enum StructureCommands {
     },
 }
 
-fn resolve_skills_dir(config: &CogtomeConfig) -> PathBuf {
+fn resolve_skills_dir(config: &CogtomeConfig) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
     // 环境变量 > 配置文件 > 默认值
-    std::env::var("COGTOME_SKILLS_DIR")
+    // paths.units 作为 root（向后兼容），motifs 和 structures 作为子目录覆盖
+    let root = std::env::var("COGTOME_SKILLS_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
             config
@@ -90,7 +91,27 @@ fn resolve_skills_dir(config: &CogtomeConfig) -> PathBuf {
                 .unwrap_or_else(|| {
                     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("skills")
                 })
-        })
+        });
+
+    // motifs 和 structures 路径：配置优先，否则使用相对于 root 的默认值
+    let motifs = config
+        .paths
+        .motifs
+        .as_ref()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("motifs"));
+
+    let structures = config
+        .paths
+        .structures
+        .as_ref()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("structures"));
+
+    // units 子目录始终使用 "units"（向后兼容）
+    let units = PathBuf::from("units");
+
+    (root, units, motifs, structures)
 }
 
 fn resolve_timeout(config: &CogtomeConfig) -> u64 {
@@ -115,7 +136,8 @@ async fn main() -> Result<()> {
         }
     };
 
-    let skills = SkillsDir::new(resolve_skills_dir(&config));
+    let (root, units, motifs, structures) = resolve_skills_dir(&config);
+    let skills = SkillsDir::with_subdirs(root, units, motifs, structures);
     let timeout = resolve_timeout(&config);
     let concurrency_config: HashMap<String, UnitConcurrency> = config
         .units

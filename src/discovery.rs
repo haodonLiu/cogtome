@@ -4,28 +4,52 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone)]
 pub struct SkillsDir {
     pub root: PathBuf,
+    pub units_subdir: PathBuf,
+    pub motifs_subdir: PathBuf,
+    pub structures_subdir: PathBuf,
+}
+
+impl Default for SkillsDir {
+    fn default() -> Self {
+        Self::new(PathBuf::from("."))
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct ComplexInfo {
     pub name: String,
+    #[allow(dead_code)]
     pub path: PathBuf,
     pub description: String,
 }
 
 impl SkillsDir {
     pub fn new(root: PathBuf) -> Self {
-        Self { root }
+        Self {
+            root,
+            units_subdir: PathBuf::from("units"),
+            motifs_subdir: PathBuf::from("motifs"),
+            structures_subdir: PathBuf::from("structures"),
+        }
+    }
+
+    pub fn with_subdirs(root: PathBuf, units: PathBuf, motifs: PathBuf, structures: PathBuf) -> Self {
+        Self {
+            root,
+            units_subdir: units,
+            motifs_subdir: motifs,
+            structures_subdir: structures,
+        }
     }
 
     /// 查找 Unit 可执行文件：先全局，再各 Complex 私有
     pub fn find_unit(&self, name: &str) -> Option<PathBuf> {
-        let global = self.root.join("units").join(name).join("bin").join(name);
+        let global = self.root.join(&self.units_subdir).join(name).join("bin").join(name);
         if global.exists() {
             return Some(global);
         }
         Self::scan_dirs(&self.root, |p| {
-            let candidate = p.join("units").join(name).join("bin").join(name);
+            let candidate = p.join(&self.units_subdir).join(name).join("bin").join(name);
             candidate.exists().then_some(candidate)
         })
     }
@@ -33,13 +57,13 @@ impl SkillsDir {
     /// 查找 Motif 定义文件
     pub fn find_motif(&self, name: &str) -> Option<PathBuf> {
         for ext in ["yaml", "yml", "py", "sh"] {
-            let global = self.root.join("motifs").join(format!("{}.{}", name, ext));
+            let global = self.root.join(&self.motifs_subdir).join(format!("{}.{}", name, ext));
             if global.exists() {
                 return Some(global);
             }
         }
         Self::scan_dirs(&self.root, |p| {
-            let dir = p.join("motifs");
+            let dir = p.join(&self.motifs_subdir);
             for ext in ["yaml", "yml", "py", "sh"] {
                 let candidate = dir.join(format!("{}.{}", name, ext));
                 if candidate.exists() {
@@ -52,12 +76,12 @@ impl SkillsDir {
 
     /// 查找 Structure manifest
     pub fn find_structure(&self, name: &str) -> Option<PathBuf> {
-        let global = self.root.join("structures").join(name).join("manifest.yaml");
+        let global = self.root.join(&self.structures_subdir).join(name).join("manifest.yaml");
         if global.exists() {
             return Some(global);
         }
         Self::scan_dirs(&self.root, |p| {
-            let candidate = p.join("structures").join(name).join("manifest.yaml");
+            let candidate = p.join(&self.structures_subdir).join(name).join("manifest.yaml");
             candidate.exists().then_some(candidate)
         })
     }
