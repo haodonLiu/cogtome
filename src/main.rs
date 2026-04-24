@@ -7,8 +7,9 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use config::CogtomeConfig;
 use discovery::SkillsDir;
-use engine::{StructureExecutor, UnitRunner, YamlMotifEngine};
+use engine::{StructureExecutor, UnitConcurrency, UnitRunner, YamlMotifEngine};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -115,7 +116,23 @@ async fn main() -> Result<()> {
     };
 
     let skills = SkillsDir::new(resolve_skills_dir(&config));
-    let runner = UnitRunner::new(skills.clone(), resolve_timeout(&config));
+    let timeout = resolve_timeout(&config);
+    let concurrency_config: HashMap<String, UnitConcurrency> = config
+        .units
+        .concurrency
+        .into_iter()
+        .map(|(k, v)| {
+            (
+                k,
+                UnitConcurrency {
+                    max_global: v.max_global,
+                    max_per_host: v.max_per_host,
+                    resource_key: v.resource_key,
+                },
+            )
+        })
+        .collect();
+    let runner = UnitRunner::new_with_config(skills.clone(), timeout, concurrency_config);
 
     match cli.command {
         // ------------------------------------------------------------------

@@ -303,6 +303,11 @@ impl ExecContext {
         let bytes = expr.as_bytes();
         let op_bytes = op.as_bytes();
 
+        // Early exit if op is longer than expression
+        if op_bytes.len() > bytes.len() {
+            return None;
+        }
+
         let mut i = 0;
         while i <= bytes.len() - op_bytes.len() {
             let ch = bytes[i] as char;

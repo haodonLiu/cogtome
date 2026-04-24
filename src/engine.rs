@@ -47,6 +47,26 @@ impl UnitRunner {
         }
     }
 
+    pub fn new_with_config(skills: SkillsDir, timeout_secs: u64, concurrency_config: HashMap<String, UnitConcurrency>) -> Self {
+        // Build resource semaphores from config
+        let mut resource_semaphores: HashMap<String, Arc<Semaphore>> = HashMap::new();
+        for (_unit_name, config) in &concurrency_config {
+            if let Some(ref key) = config.resource_key {
+                // Use max_global as semaphore capacity, default to 1 if not set
+                let permits = config.max_global.unwrap_or(1);
+                resource_semaphores.insert(key.clone(), Arc::new(Semaphore::new(permits as usize)));
+            }
+        }
+
+        Self {
+            skills,
+            timeout_secs,
+            concurrency_config,
+            resource_semaphores: Arc::new(resource_semaphores),
+            undeclared_semaphores: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
     pub async fn call(&self, name: &str, input: Value) -> Result<(Value, i32)> {
         // Acquire semaphore permit for rate limiting
         let sem = self.get_semaphore(name).await;
@@ -69,12 +89,39 @@ impl UnitRunner {
             stdin.write_all(input.to_string().as_bytes()).await?;
         }
 
+        // Use Arc<Mutex<Option<Child>>> to allow taking child for kill on timeout
+        let child_arc = Arc::new(tokio::sync::Mutex::new(Some(child)));
+
+        let child_for_kill = child_arc.clone();
         let output = tokio::time::timeout(
             Duration::from_secs(self.timeout_secs),
-            child.wait_with_output(),
+            async {
+                let mut guard = child_arc.lock().await;
+                if let Some(child) = guard.take() {
+                    child.wait_with_output().await
+                } else {
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "child already taken",
+                    ))
+                }
+            },
         )
-        .await
-        .with_context(|| format!("Unit '{}' timed out after {}s", name, self.timeout_secs))??;
+        .await;
+
+        let output = match output {
+            Ok(Ok(output)) => output,
+            Ok(Err(e)) => anyhow::bail!("Unit '{}' I/O error: {}", name, e),
+            Err(_) => {
+                // Timeout - kill the child process
+                let mut guard = child_for_kill.lock().await;
+                if let Some(mut child) = guard.take() {
+                    let _ = child.kill().await;
+                    let _ = child.wait().await;
+                }
+                anyhow::bail!("Unit '{}' timed out after {}s", name, self.timeout_secs);
+            }
+        };
 
         let exit_code = output.status.code().unwrap_or(-1);
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -280,7 +327,7 @@ impl YamlMotifEngine {
 
             // normal unit call
             if let Some(unit_name) = &step.unit {
-                let step_input = self.resolve_step_input(&ctx, &step.input)?;
+                let step_input = Self::resolve_step_input(&ctx, &step.input)?;
                 let (output, exit_code) = runner
                     .call(unit_name, Value::Object(step_input))
                     .await?;
@@ -351,7 +398,7 @@ impl YamlMotifEngine {
                     }
                 }
 
-                let input = self.resolve_step_input(&step_ctx, &step.input)?;
+                let input = Self::resolve_step_input(&step_ctx, &step.input)?;
 
                 if let Some(unit_name) = &step.unit {
                     match runner.call(unit_name, Value::Object(input)).await {
@@ -378,11 +425,11 @@ impl YamlMotifEngine {
 
             if success {
                 // 即使成功也调用 resolve_aggregate_item，保持模板结构一致
-                let aggregated = self.resolve_aggregate_item(&foreach.aggregate, &step_ctx)?;
+                let aggregated = Self::resolve_aggregate_item(&foreach.aggregate, &step_ctx)?;
                 results.push(aggregated);
             } else if foreach.on_error == ErrorStrategy::Continue {
                 // continue 模式：先按模板解析，失败字段返回 null，然后合并 __error
-                let mut aggregated = self.resolve_aggregate_item(&foreach.aggregate, &step_ctx)?;
+                let mut aggregated = Self::resolve_aggregate_item(&foreach.aggregate, &step_ctx)?;
                 if let Some(obj) = aggregated.as_object_mut() {
                     obj.insert("__error".to_string(), Value::String(error_msg.unwrap_or_default()));
                 } else {
@@ -427,6 +474,14 @@ impl YamlMotifEngine {
             );
         }
 
+        // Limit concurrency to avoid overwhelming the system (default: min(50, items.len()))
+        let max_concurrent = std::env::var("COGTOME_MAX_CONCURRENT")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(50)
+            .min(items.len());
+        let concurrency_limiter = Arc::new(Semaphore::new(max_concurrent));
+
         let cancel_token = CancellationToken::new();
         let fail_fast_flag = Arc::new(AtomicBool::new(false));
         let first_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
@@ -440,8 +495,12 @@ impl YamlMotifEngine {
             let cancel_clone = cancel_token.clone();
             let ff_flag = fail_fast_flag.clone();
             let ff_error = first_error.clone();
+            let permit_clone = concurrency_limiter.clone();
 
             futures.push(async move {
+                // Acquire permit before starting (limits concurrency)
+                let _permit = permit_clone.acquire().await.ok();
+
                 // Check if cancelled before starting
                 if cancel_clone.is_cancelled() {
                     return None;
@@ -470,7 +529,7 @@ impl YamlMotifEngine {
                         }
                     }
 
-                    let input = match YamlMotifEngine::resolve_step_input_static(&step_ctx, &step.input) {
+                    let input = match Self::resolve_step_input(&step_ctx, &step.input) {
                         Ok(i) => i,
                         Err(e) => {
                             success = false;
@@ -515,12 +574,12 @@ impl YamlMotifEngine {
                 }
 
                 if success {
-                    match YamlMotifEngine::resolve_aggregate_item_static(&foreach_clone.aggregate, &step_ctx) {
+                    match Self::resolve_aggregate_item(&foreach_clone.aggregate, &step_ctx) {
                         Ok(v) => Some(Some(v)),
                         Err(_) => Some(None),
                     }
                 } else if foreach_clone.on_error == ErrorStrategy::Continue {
-                    match YamlMotifEngine::resolve_aggregate_item_static(&foreach_clone.aggregate, &step_ctx) {
+                    match Self::resolve_aggregate_item(&foreach_clone.aggregate, &step_ctx) {
                         Ok(mut agg) => {
                             if let Some(obj) = agg.as_object_mut() {
                                 if let Some(msg) = error_msg {
@@ -557,7 +616,6 @@ impl YamlMotifEngine {
     }
 
     fn resolve_step_input(
-        &self,
         ctx: &ExecContext,
         input: &HashMap<String, String>,
     ) -> Result<Map<String, Value>> {
@@ -570,35 +628,6 @@ impl YamlMotifEngine {
     }
 
     fn resolve_aggregate_item(
-        &self,
-        aggregate: &AggregateBlock,
-        ctx: &ExecContext,
-    ) -> Result<Value> {
-        if aggregate.map.is_empty() {
-            return Ok(Value::Null);
-        }
-
-        let mut obj = serde_json::Map::new();
-        for (k, v) in &aggregate.map {
-            let val = ctx.resolve_var(v).unwrap_or(Value::Null);
-            obj.insert(k.clone(), val);
-        }
-        Ok(Value::Object(obj))
-    }
-
-    fn resolve_step_input_static(
-        ctx: &ExecContext,
-        input: &HashMap<String, String>,
-    ) -> Result<Map<String, Value>> {
-        let mut step_input = serde_json::Map::new();
-        for (k, v) in input {
-            let val = ctx.resolve_var(v).unwrap_or(Value::Null);
-            step_input.insert(k.clone(), val);
-        }
-        Ok(step_input)
-    }
-
-    fn resolve_aggregate_item_static(
         aggregate: &AggregateBlock,
         ctx: &ExecContext,
     ) -> Result<Value> {
