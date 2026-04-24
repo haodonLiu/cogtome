@@ -347,7 +347,7 @@ impl ExecContext {
     fn compare_values(left: &Value, op: &str, right: &Value) -> bool {
         match op {
             "==" => {
-                // Deep equality check
+                // Deep equality check using JSON string serialization for complex types
                 match (left, right) {
                     (Value::Number(l), Value::Number(r)) => {
                         l.as_f64() == r.as_f64()
@@ -355,6 +355,14 @@ impl ExecContext {
                     (Value::String(l), Value::String(r)) => l == r,
                     (Value::Bool(l), Value::Bool(r)) => l == r,
                     (Value::Null, Value::Null) => true,
+                    (Value::Array(l), Value::Array(r)) => {
+                        // Compare arrays element by element
+                        l.len() == r.len() && l.iter().zip(r.iter()).all(|(a, b)| Self::compare_values(a, "==", b))
+                    }
+                    (Value::Object(l), Value::Object(r)) => {
+                        // Compare objects by serializing to string
+                        serde_json::to_string(l).ok() == serde_json::to_string(r).ok()
+                    }
                     _ => false,
                 }
             }

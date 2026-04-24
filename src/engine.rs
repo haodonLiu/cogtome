@@ -108,7 +108,6 @@ impl UnitRunner {
                 let mut guard = child_for_kill.lock().await;
                 if let Some(mut child) = guard.take() {
                     let _ = child.kill().await;
-                    let _ = child.wait().await;
                 }
                 anyhow::bail!("Unit '{}' timed out after {}s", name, self.timeout_secs);
             }
@@ -292,6 +291,7 @@ impl YamlMotifEngine {
         manifest: &MotifManifest,
         input: Value,
         runner: &UnitRunner,
+        max_iterations_hard: u32,
     ) -> Result<Value> {
         let mut ctx = ExecContext::new(input);
 
@@ -307,9 +307,9 @@ impl YamlMotifEngine {
             // foreach block
             if let Some(foreach) = &step.foreach {
                 let result = if foreach.parallel {
-                    self.execute_foreach_parallel(foreach, &ctx, runner).await?
+                    self.execute_foreach_parallel(foreach, &ctx, runner, max_iterations_hard).await?
                 } else {
-                    self.execute_foreach_serial(foreach, &ctx, runner).await?
+                    self.execute_foreach_serial(foreach, &ctx, runner, max_iterations_hard).await?
                 };
                 ctx = ctx.with_local_step(
                     step.name.clone(),
@@ -346,6 +346,7 @@ impl YamlMotifEngine {
         foreach: &ForeachBlock,
         ctx: &ExecContext,
         runner: &UnitRunner,
+        max_iterations_hard: u32,
     ) -> Result<Value> {
         // Resolve over expression to array
         let items = ctx
@@ -360,8 +361,8 @@ impl YamlMotifEngine {
             return Ok(empty_aggregate(&foreach.aggregate));
         }
 
-        // max_iterations check (hard limit 500)
-        let max_iter = foreach.max_iterations.min(500);
+        // max_iterations check (hard limit from config)
+        let max_iter = foreach.max_iterations.min(max_iterations_hard);
         if items.len() > max_iter as usize {
             anyhow::bail!(
                 "Foreach attempted {} iterations (limit: {}). Hint: Increase max_iterations or batch process.",
@@ -446,6 +447,7 @@ impl YamlMotifEngine {
         foreach: &ForeachBlock,
         ctx: &ExecContext,
         runner: &UnitRunner,
+        max_iterations_hard: u32,
     ) -> Result<Value> {
         use futures::stream::{FuturesUnordered, StreamExt};
         use std::sync::atomic::{AtomicBool, Ordering};
@@ -461,7 +463,7 @@ impl YamlMotifEngine {
             return Ok(empty_aggregate(&foreach.aggregate));
         }
 
-        let max_iter = foreach.max_iterations.min(500);
+        let max_iter = foreach.max_iterations.min(max_iterations_hard);
         if items.len() > max_iter as usize {
             anyhow::bail!(
                 "Foreach attempted {} iterations (limit: {}). Hint: Increase max_iterations or batch process.",
@@ -471,11 +473,13 @@ impl YamlMotifEngine {
         }
 
         // Limit concurrency to avoid overwhelming the system (default: min(50, items.len()))
+        // Use max(1) to prevent永久挂起 when COGTOME_MAX_CONCURRENT=0
         let max_concurrent = std::env::var("COGTOME_MAX_CONCURRENT")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
             .unwrap_or(50)
-            .min(items.len());
+            .min(items.len())
+            .max(1);
         let concurrency_limiter = Arc::new(Semaphore::new(max_concurrent));
 
         let cancel_token = CancellationToken::new();
@@ -743,6 +747,7 @@ impl StructureExecutor {
         input: Value,
         skills: &SkillsDir,
         runner: &UnitRunner,
+        max_iterations_hard: u32,
     ) -> Result<Value> {
         let mut current = input;
 
@@ -753,7 +758,7 @@ impl StructureExecutor {
 
             let motif_manifest = YamlMotifEngine::load(&motif_path)?;
             let engine = YamlMotifEngine;
-            current = engine.execute(&motif_manifest, current, runner).await?;
+            current = engine.execute(&motif_manifest, current, runner, max_iterations_hard).await?;
         }
 
         Ok(current)

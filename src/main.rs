@@ -77,7 +77,36 @@ enum StructureCommands {
     },
 }
 
-fn resolve_skills_dir(config: &CogtomeConfig) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
+fn resolve_timeout(config: &CogtomeConfig) -> u64 {
+    std::env::var("COGTOME_TIMEOUT")
+        .and_then(|v| v.parse().map_err(|_| std::env::VarError::NotPresent))
+        .unwrap_or(config.units.defaults.timeout_secs)
+}
+
+fn resolve_max_iterations_hard(config: &CogtomeConfig) -> u32 {
+    config.runtime.max_iterations_hard
+}
+
+#[derive(Debug, Clone)]
+struct SkillsPaths {
+    root: PathBuf,
+    units: PathBuf,
+    motifs: PathBuf,
+    structures: PathBuf,
+}
+
+impl Default for SkillsPaths {
+    fn default() -> Self {
+        Self {
+            root: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("skills"),
+            units: PathBuf::from("units"),
+            motifs: PathBuf::from("motifs"),
+            structures: PathBuf::from("structures"),
+        }
+    }
+}
+
+fn resolve_skills_dir(config: &CogtomeConfig) -> SkillsPaths {
     // 环境变量 > 配置文件 > 默认值
     // paths.units 作为 root（向后兼容），motifs 和 structures 作为子目录覆盖
     let root = std::env::var("COGTOME_SKILLS_DIR")
@@ -111,13 +140,7 @@ fn resolve_skills_dir(config: &CogtomeConfig) -> (PathBuf, PathBuf, PathBuf, Pat
     // units 子目录始终使用 "units"（向后兼容）
     let units = PathBuf::from("units");
 
-    (root, units, motifs, structures)
-}
-
-fn resolve_timeout(config: &CogtomeConfig) -> u64 {
-    std::env::var("COGTOME_TIMEOUT")
-        .and_then(|v| v.parse().map_err(|_| std::env::VarError::NotPresent))
-        .unwrap_or(config.units.defaults.timeout_secs)
+    SkillsPaths { root, units, motifs, structures }
 }
 
 #[tokio::main]
@@ -136,9 +159,10 @@ async fn main() -> Result<()> {
         }
     };
 
-    let (root, units, motifs, structures) = resolve_skills_dir(&config);
-    let skills = SkillsDir::with_subdirs(root, units, motifs, structures);
+    let paths = resolve_skills_dir(&config);
+    let skills = SkillsDir::with_subdirs(paths.root, paths.units, paths.motifs, paths.structures);
     let timeout = resolve_timeout(&config);
+    let max_iterations_hard = resolve_max_iterations_hard(&config);
     let concurrency_config: HashMap<String, UnitConcurrency> = config
         .units
         .concurrency
@@ -180,7 +204,7 @@ async fn main() -> Result<()> {
                     .ok_or_else(|| anyhow::anyhow!("Motif '{}' not found", name))?;
                 let manifest = YamlMotifEngine::load(&path)?;
                 let engine = YamlMotifEngine;
-                let result = engine.execute(&manifest, val, &runner).await?;
+                let result = engine.execute(&manifest, val, &runner, max_iterations_hard).await?;
                 println!("{}", serde_json::to_string_pretty(&result)?);
             }
         },
@@ -196,7 +220,7 @@ async fn main() -> Result<()> {
                     .ok_or_else(|| anyhow::anyhow!("Structure '{}' not found", name))?;
                 let manifest = StructureExecutor::load(&path)?;
                 let result =
-                    StructureExecutor::execute(&manifest, val, &skills, &runner).await?;
+                    StructureExecutor::execute(&manifest, val, &skills, &runner, max_iterations_hard).await?;
                 println!("{}", serde_json::to_string_pretty(&result)?);
             }
         },
@@ -225,7 +249,7 @@ async fn main() -> Result<()> {
                 anyhow::anyhow!("Structure '{}' not found", structure_name)
             })?;
             let manifest = StructureExecutor::load(&path)?;
-            let result = StructureExecutor::execute(&manifest, val, &skills, &runner).await?;
+            let result = StructureExecutor::execute(&manifest, val, &skills, &runner, max_iterations_hard).await?;
             println!("{}", serde_json::to_string_pretty(&result)?);
         }
 
