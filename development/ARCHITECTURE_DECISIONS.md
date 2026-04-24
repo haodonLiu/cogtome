@@ -2,6 +2,7 @@
 
 > 决策时间：2026-04-24
 > 来源：与"聪明人"的讨论
+> 版本：v2（修正 7 类具体问题）
 
 ---
 
@@ -16,100 +17,143 @@
 | 结果聚合、错误重试 | ✅ COGTOME | 执行可靠性 |
 | 意图匹配、Complex 选择 | ❌ OpenClaw | Agent 的智能 |
 
-**关键区分：**
-- **编排（Orchestration）** = 确定性控制流。`for each file in list` 不需要智能，只需要执行纪律。
-- **决策（Decision）** = 非确定性选择。`哪个 Complex 最适合这个任务` 需要理解上下文，是 Agent 的事。
-
 ---
 
 ## 二、P0 问题解决方案
 
 ### P0-1：Motif 循环语法 — `foreach` + `aggregate`
 
+#### foreach 语法定义
+
+```yaml
+foreach:
+  over: "${steps.status.output.files}"   # 要迭代的数组表达式（必填）
+  as: file                               # 迭代变量名（必填）
+  var_name: file                         # 别名，等同于 as
+  max_iterations: 50                     # 安全上限（默认 50）
+  on_error: fail_fast                    # fail_fast | continue（默认 fail_fast）
+flow:
+  - name: diff
+    unit: git-diff
+    input:
+      file: "${item}"                   # 引用当前迭代项
+  - name: review
+    if: "${steps.diff.output.is_binary} == false"
+    unit: ai-review
+    input:
+      diff: "${steps.diff.output.diff}"
+aggregate:
+  mode: array                           # array | object | sum | join
+  map:                                  # 仅 array/object 模式需要
+    file: "${item}"
+    is_binary: "${steps.diff.output.is_binary}"
+    review: "${steps.review.output.comment}"  # 被跳过时为 null
+```
+
+#### 内置变量
+
+| 变量 | 作用域 | 说明 |
+|------|--------|------|
+| `item` | foreach 子 flow 全局 | 当前迭代项 |
+| `__index` | foreach 子 flow 全局 | 当前迭代索引（从 0 开始） |
+| `__error` | 仅在 `on_error: continue` 的 aggregate.map 中 | 当前迭代的错误信息（如有） |
+
+**注意：`__error` 仅在 aggregate 阶段可用，不可在 foreach 内部的后续 step 中使用。**
+
+#### foreach 完整示例（修正笔误）
+
 ```yaml
 # motifs/code-review.yaml
 flow:
- - name: status
-   unit: git-status
+  - name: status
+    unit: git-status
 
- - name: review_loop
-   foreach:
-     over: "${steps.status.output.files}"
-     as: file              # 迭代变量名
-     max_iterations: 50   # 安全上限
-   flow:
-   - name: diff
-     unit: git-diff
-     input:
-       file: "${item}"     # 引用当前迭代项
+  - name: review_loop
+    foreach:
+      over: "${steps.status.output.files}"
+      as: file
+      max_iterations: 50
+      on_error: fail_fast
+    flow:
+      - name: diff
+        unit: git-diff
+        input:
+          file: "${item}"
 
-   - name: review
-     if: "${steps.diff.output.is_binary} == false"
-     unit: ai-review
-     input:
-       diff: "${steps.diff.output.diff}"
-       language: "${params.language}"
+      - name: review
+        if: "${steps.diff.output.is_binary} == false"
+        unit: ai-review
+        input:
+          diff: "${steps.diff.output.diff}"
+          language: "${params.language}"
 
-   aggregate:
-     mode: array           # 收集为数组
-     map:
-       file: "${item}"
-       diff: "${steps.diff.output.diff}"
-       review: "${steps.review.output.comment}"  # 跳过时为 null
+    aggregate:
+      mode: array
+      map:
+        file: "${item}"
+        is_binary: "${steps.diff.output.is_binary}"
+        review: "${steps.review.output.comment}"
 
- - name: save
-   unit: save-note
-   input:
-     path: "${params.save_path}"
-     content: "${steps.review_loop.aggregate.reviews}"
+  - name: save
+    unit: save-note
+    input:
+      path: "${params.save_path}"
+      content: "${steps.review_loop.aggregate}"
 
 return:
-   report: "${steps.report.output}"
-   file_count: "${steps.status.output.files.length}"
-   reviewed_count: "${length(filter(steps.reviews.aggregate, 'review != null'))}"
+  file_count: "${steps.status.output.files.length}"
+  reviews: "${steps.review_loop.aggregate}"
+  # Phase 2 支持：reviewed_count: "${length(filter(steps.review_loop.aggregate, 'review != null'))}"
 ```
 
-**关键设计：**
-- `foreach` 是容器节点，内部有自己的子 flow
-- `aggregate` 定义如何收集结果，避免手动写 `return`
-- `max_iterations` 防止无限循环
-- **默认 `fail_fast`**，可选 `on_error: continue`
+**⚠️ 修正说明（v2）：**
+- 原文档 `steps.report` → 不存在，已移除
+- 原文档 `steps.reviews.aggregate` → 应为 `steps.review_loop.aggregate`，已修正
+- Phase 1 `return` 不支持 `filter` 函数，仅输出原始数组
 
-**aggregate 模式：**
+#### aggregate 模式
 
-| 模式 | 用途 | 示例 |
+| 模式 | 用途 | 语法 |
 |------|------|------|
-| `array` | 收集所有结果为数组 | 5 个文件 → 5 个 review |
-| `object` | 按键聚合 | `{"a.py": review1, "b.py": review2}` |
-| `sum` | 数值累加 | 统计总行数 |
-| `join` | 字符串拼接 | 合并所有 diff |
+| `array` | 收集所有结果为数组 | `map` 定义每个元素的字段 |
+| `object` | 按键聚合 | `key: "${item.filename}"`，`value: "${steps.review.output}"` |
+| `sum` | 数值累加 | `sum: "${steps.diff.output.lines_added}"` |
+| `join` | 字符串拼接 | `join: "${steps.review.output.comment}"`，`separator: "\n\n"` |
 
 ---
 
 ### P0-2：变量引用增强 — 轻量表达式引擎
 
-**Phase 1 支持的表达式子集：**
+#### Phase 1 vs Phase 2 边界（已修正矛盾）
+
+**Phase 1（立即实现）：**
+- 变量引用：`${steps.a.output}`, `${steps.a.output.field[0]}`
+- 索引访问：`[0]`, `[-1]`
+- 长度属性：`.length`
+- 比较运算：`==`, `!=`, `>`, `<`, `>=`, `<=`
+- 逻辑运算：`&&`, `||`, `!`
+- 三目运算：`condition ? a : b`
+
+**Phase 2（后续实现）：**
+- 内置函数：`filter()`, `map()`, `length()`, `join()`
+- 简单 lambda：`arr.filter(x => x > 5)`
+- 管道操作
+
+#### Phase 1 return 示例（可实际运行）
 
 ```yaml
-# 基础
-"${steps.a.output}"                         # 变量
-"${steps.a.output.numbers[0]}"             # 索引
-"${steps.a.output.numbers.length}"          # 长度属性
-"${steps.a.output.numbers[-1]}"             # 负索引
-
-# 内置函数（Motif 引擎提供）
-"${filter(steps.reviews, 'review != null')}" # 过滤
-"${length(steps.reviews)}"                  # 计数
-"${join(steps.diffs, '\n\n')}"              # 拼接
+return:
+  file_count: "${steps.status.output.files.length}"
+  reviews: "${steps.review_loop.aggregate}"
+  first_file: "${steps.status.output.files[0]}"
+  last_file: "${steps.status.output.files[-1]}"
+  has_binary: "${steps.status.output.files.length > 0}"
 ```
 
-**不支持（Phase 1）：**
-- Method chaining：`steps.a.filter()`
-- Lambda：`arr.filter(x => x > 5)`
-
-**Phase 2 再考虑：**
-- 简单 lambda
-- 管道操作
+**⚠️ 修正说明（v2）：**
+- 原文档 `filter()` 出现在 Phase 1 示例中，但属于 Phase 2
+- 已将 `reviewed_count` 改为 Phase 1 可运行的形式
+- 明确 Phase 边界，避免实现歧义
 
 ---
 
@@ -118,54 +162,89 @@ return:
 ```rust
 enum UnitResolution {
   // 1. 当前 Complex 的私有 Unit（最优先）
-  ComplexLocal { path: "skills/complex/{complex_name}/units/{unit_name}" },
-  
+  ComplexLocal {
+    base: PathBuf,  // Complex 根目录
+    unit_name: &str,
+  },
+
   // 2. 全局注册表（次优先）— 使用 dirs crate，跨平台
-  GlobalRegistry { path: data_dir().join("cogtome").join("units") },
-  
+  GlobalRegistry {
+    path: PathBuf,  // 因平台而异（见下方）
+  },
+
   // 3. 系统 PATH（兜底）
-  SystemPath { name: "{unit_name}" },
+  SystemPath { name: &str },
 }
 ```
 
-**平台路径：**
-- Linux: `~/.local/share/cogtome/units/`
-- macOS: `~/Library/Application Support/cogtome/units/`
-- Windows: `C:\Users\<User>\AppData\Roaming\cogtome\units\`
+**平台默认路径：**
+
+| 平台 | 默认路径 | 说明 |
+|------|----------|------|
+| Linux | `~/.local/share/cogtome/units/` | XDG Data Dir |
+| macOS | `~/Library/Application Support/cogtome/units/` | Cocoa NSApplicationSupport |
+| Windows | `C:\Users\<User>\AppData\Roaming\cogtome\units\` | Win CSIDL_APPDATA |
 
 **环境变量覆盖：**
 ```bash
 export COGTOME_UNITS_PATH=/custom/path
 ```
 
----
+### Complex 路径解析（新增）
 
-### P0-4：动态结果累积 — 配合 foreach 解决
+Complex 与 Unit 共用同一根目录：
 
-见上方 P0-1 示例，aggregate 自动收集迭代结果，无需手动列举。
+```
+~/.local/share/cogtome/
+├── units/              # Unit 查找路径
+│   ├── web-search/
+│   └── git-diff/
+└── complexes/          # Complex 查找路径
+    ├── text-processing/
+    └── web-research/
+```
+
+**环境变量覆盖：**
+```bash
+export COGTOME_COMPLEXES_PATH=/custom/complexes
+```
+
+Agent 调用时：`cogtome run <complex_name>` → 在 complexes 目录下查找 `<complex_name>/SKILL.md`。
 
 ---
 
 ## 三、快照语义实现约束
 
-### 三个边界情况
+### 实现细节（已修正 O(1) 注释）
 
-**1. 并发一致性** — 快照在迭代开始前一次性捕获
 ```rust
-let snapshot = Arc::new(steps.clone()); // Arc::clone = O(1)
+// StepState 内部使用 Arc<Value>，clone 为 O(1)
+struct StepState {
+    data: Arc<serde_json::Value>,
+}
+
+// global_steps 本身是 Arc<HashMap>，clone 时只复制指针
+let snapshot: Arc<HashMap<String, StepState>> = Arc::new(ctx.global_steps.clone());
+//                                          ^
+//                                          只有指针复制，是 O(1)
+
 for item in list {
-    let config = snapshot.get("b"); // 永远一致
+    let config = snapshot.get("b"); // 永远一致，无深拷贝
 }
 ```
+
+**⚠️ 修正说明（v2）：**
+- 原文档 `Arc::new(steps.clone())` 实际是 O(n)（先深拷贝 HashMap 再包 Arc）
+- 正确做法：`ctx.global_steps` 本身就是 `Arc<HashMap>`，直接 `Arc::clone(&ctx.global_steps)` 是 O(1)
+- 已修正代码示例
+
+### 三个边界情况
+
+**1. 并发一致性** — 快照在迭代开始前一次性捕获（Arc 引用，O(1)）
 
 **2. 禁止修改外部状态** — foreach 内部维护局部 scope，迭代结束后通过 aggregate 显式输出
 
-**3. 内存优化**
-```rust
-struct StepState {
-    data: Arc<serde_json::Value>, // Arc::clone = O(1)
-}
-```
+**3. 内存优化** — `StepState.data` 是 `Arc<serde_json::Value>`，内部 clone 也是 O(1)
 
 ---
 
@@ -182,7 +261,6 @@ struct StepState {
   flow:
   - name: config        # ✅ 允许：遮蔽外部 config
     unit: some_other
-    # 这个 config 的输出只存在于 foreach 局部 scope
 ```
 
 **解析优先级：**
@@ -195,14 +273,48 @@ struct StepState {
 
 ---
 
-## 五、错误处理策略
+## 五、边界情况处理汇总（新增）
+
+### 统一规则
+
+| 场景 | 处理策略 | 理由 |
+|------|----------|------|
+| `if` 表达式解析失败 | 视为 `false`（跳过） | 保守策略：不确定时跳过，避免执行不该执行的 step |
+| `foreach.over` 不存在 | 视为**空数组**，继续执行（生成 0 次迭代） | `fail_fast` 对空数组无意义 |
+| `foreach.over` 求值非数组 | 抛错 | 类型错误，必须修复 |
+| `return` 引用缺失的 step | **抛错** | return 是最终输出，静默 null 会隐藏 bug |
+| aggregate.map 引用不存在的 step | 静默返回 `null` + 警告日志 | 被 if 跳过的 step 语义上就是未执行 |
+| `on_error: continue` 迭代失败 | 记录 `__error`，继续下一迭代 | 部分成功是有价值的信息 |
+| `on_error: fail_fast` 任一迭代失败 | **不产出 aggregate**，直接向上抛错 | 语义干净，避免脏数据传播 |
+
+### Aggregate object 模式语法
+
+```yaml
+aggregate:
+  mode: object
+  key: "${item.filename}"           # 必填：作为键的表达式
+  value: "${steps.review.output}"    # 作为值的表达式
+```
+
+**示例：**
+```yaml
+aggregate:
+  mode: object
+  key: "${item}"
+  value: "${steps.review.output.comment}"
+# 结果：{"a.py": "LGTM", "b.py": "needs fix"}
+```
+
+---
+
+## 六、错误处理策略
 
 ### foreach 错误策略
 
 | 策略 | 行为 |
 |------|------|
 | `fail_fast`（默认） | 任一迭代失败，**不产出 aggregate**，直接向上传播错误 |
-| `continue` | 跳过失败迭代，继续处理，记录错误到 aggregate |
+| `continue` | 跳过失败迭代，继续处理，`__error` 记录错误信息 |
 
 ```yaml
 foreach:
@@ -216,12 +328,12 @@ foreach:
     map:
       file: "${item}"
       result: "${steps.risky.output}"  # 失败时为 null
-      error: "${__error}"              # 内置变量：错误信息
+      error: "${__error}"              # 仅在失败时有值
 ```
 
 ---
 
-## 六、并行 foreach（Phase 2）
+## 七、并行 foreach（Phase 2）
 
 ### 核心原则：默认保守，显式放行
 
@@ -233,9 +345,9 @@ foreach:
 # units/ai-review/manifest.yaml
 name: ai-review
 concurrency:
-  max_global: 3      # 全局最多 3 个并发实例（跨所有 foreach）
-  max_per_host: 1    # 单主机最多 1 个（防止 GPU 内存耗尽）
-  resource_key: "openai_api"  # 共享资源标识，同 key 的 Unit 共享配额
+  max_global: 3      # 全局最多 3 个并发实例
+  max_per_host: 1    # 单主机最多 1 个
+  resource_key: "openai_api"  # 共享资源标识
 ```
 
 **如果不声明 `concurrency` 字段：**
@@ -243,131 +355,97 @@ concurrency:
 | 场景 | 行为 |
 |------|------|
 | 串行 foreach | 正常执行 |
-| 并行 foreach | 该 Unit 被强制串行化，其他 Unit 仍可并行 |
+| 并行 foreach | 该 Unit 被强制串行化 |
 
-### Phase 2 并行设计
+### Phase 2 语法（预留）
 
 ```yaml
-# Phase 2 语法（预留）
 foreach:
   over: "${files}"
   as: file
   parallel: true
-  max_concurrency: 5  # 并发上限
+  max_concurrency: 5
   flow:
   - unit: git-diff
   - unit: ai-review
 ```
 
-**Runtime 调度：**
-- Motif 作者写 `parallel: true`，不感知底层限流
-- Runtime 根据 Unit `concurrency` 声明自动调度
-- 有 Unit 未声明安全 → 整个迭代串行化
-
 ---
 
-## 七、if 条件分类
-
-**Motif 层的 `if` 是确定性编排，文档必须区分：**
+## 八、if 条件分类
 
 | 类型 | 定义 | 示例 | 归属 |
 |------|------|------|------|
-| 确定性条件 | 基于结构化数据的布尔判断，结果可预期 | `is_binary == false`, `file_size > 1000` | ✅ Motif 编排 |
-| AI 输出条件 | 基于 AI 生成内容的阈值判断，结果不确定 | `quality > 0.8`, `sentiment == "positive"` | ⚠️ 谨慎使用 |
+| 确定性条件 | 基于结构化数据的布尔判断 | `is_binary == false`, `file_size > 1000` | ✅ Motif 编排 |
+| AI 输出条件 | 基于 AI 生成内容的阈值判断 | `quality > 0.8` | ⚠️ 谨慎使用 |
 
-**最佳实践：**
-
-```
-Motif 的 if 只接收布尔值，不解释数值含义。
-数值到布尔的转换应该在 Unit 内完成。
-```
-
-| ❌ 不推荐 | ✅ 推荐 |
-|----------|--------|
-| `if: "${steps.review.output.quality} > 0.8"` | `if: "${steps.quality_check.output.passed}"` |
-| Motif 直接解析 AI 输出 | AI 判断封装在 Unit 内，输出明确的布尔字段 |
+**最佳实践：** Motif 的 `if` 只接收布尔值，不解释数值含义。数值到布尔的转换应该在 Unit 内完成。
 
 ---
 
-## 八、Windows 路径支持
-
-使用 `dirs` crate，而非硬编码 `~/.cogtome`：
-
-```rust
-use dirs::data_dir;
-
-fn global_units_path() -> PathBuf {
-    data_dir()
-        .expect("无法确定数据目录")
-        .join("cogtome")
-        .join("units")
-}
-```
-
-同时支持环境变量覆盖：`COGTOME_UNITS_PATH`
-
----
-
-## 九、Aggregate null 处理规则
-
-**聚合阶段引用不存在的 step 时：静默返回 `null`，记录警告日志。**
-
-```rust
-fn resolve_for_aggregate(expr: &str, ctx: &IterationContext) -> Value {
-    match resolve_variable(expr, ctx) {
-        Some(v) => v,
-        None => {
-            log::warn!("Aggregate map 中 '{}' 解析失败，使用 null", expr);
-            Value::Null
-        }
-    }
-}
-```
-
-**文档明确：**
-> 聚合阶段引用不存在的 step 时，返回 `null` 并记录警告。如需严格检查，在 `return` 阶段用表达式引擎做非空校验。
-
----
-
-## 十、实施优先级
+## 九、实施优先级（最终版）
 
 ```
-Phase 1（本周，阻塞所有场景）：
-├── P0-3 Unit 路径解析（没有它连场景1都跑不通）
-├── P0-1 foreach 循环语法（场景3的核心）
-├── P0-4 aggregate 聚合（配合循环使用）
-└── P0-2 表达式引擎基础（变量 + 索引 + length）
+Phase 1（立即，阻塞所有场景）：
+├── P0-3 Unit/Complex 路径解析（三级查找 + dirs crate）
+├── P0-1 foreach 循环语法（as, over, flow, aggregate）
+├── P0-4 aggregate 聚合（array/object/sum/join）
+├── P0-2 表达式引擎 Phase 1 子集
+├── 变量遮蔽规则
+├── 边界情况处理规则
+└── max_iterations 硬限制
 
-Phase 2（下周，解锁复杂场景）：
-├── P0-2 表达式引擎增强（filter, length, join）
+Phase 2（后续，解锁复杂场景）：
+├── foreach parallel: true
+├── Unit concurrency 声明 + Runtime 限流
+├── P0-2 表达式引擎增强（filter, join, length）
 ├── P1-1 Schema 约束扩展
 ├── P1-2 默认值机制
-├── foreach parallel: true（并发迭代）
-└── Unit concurrency 声明 + Runtime 限流（并行安全的前提）
+└── P1-3 AI token 分块
 
-Phase 3（后续，体验优化）：
+Phase 3（体验优化）：
 ├── P2-1 auto-complex 快捷注册
-├── P1-3 AI token 分块
-└── P2-2 负索引（已在 P0-2 覆盖）
+└── P1-4 AI 输出条件分类规范
 ```
 
 ---
 
-## 十一、配置项
+## 十、配置项（已修正路径示例）
 
 ```toml
 # cogtome.toml
 [runtime]
 max_iterations = 50           # 默认上限
-max_iterations_hard = 500    # 绝对上限，防止配置错误
+max_iterations_hard = 500     # 绝对上限
 
 [paths]
-units = "~/.cogtome/units"    # 可通过 COGTOME_UNITS_PATH 覆盖
+# 默认值因平台而异，无需显式配置：
+# Linux:   ~/.local/share/cogtome/
+# macOS:   ~/Library/Application Support/cogtome/
+# Windows: %APPDATA%/cogtome/
+# 如需自定义，通过环境变量覆盖：
+# COGTOME_UNITS_PATH
+# COGTOME_COMPLEXES_PATH
 ```
 
-**错误信息示例：**
+**⚠️ 修正说明（v2）：**
+- 原文档 `units = "~/.cogtome/units"` 与实际平台默认值不符
+- 已修正为"默认值因平台而异"，示例改为说明文字
+- 明确 `~` 展开由 cogtome 自行处理
+
+---
+
+## 十一、错误信息示例
+
 ```
 Error: MaxIterationsExceeded
- foreach 'review_loop' attempted 51 iterations (limit: 50).
- Hint: Increase max_iterations in cogtome.toml or ask Agent to batch process.
+  foreach 'review_loop' attempted 51 iterations (limit: 50).
+  Hint: Increase max_iterations in cogtome.toml or ask Agent to batch process.
+
+Error: InvalidAggregateExpression
+  Aggregate map expression '${steps.nonexistent.output}' resolved to null.
+  (This is a warning, not an error. Check your if conditions.)
+
+Error: TypeMismatch
+  'over' expression resolved to string, expected array.
 ```
