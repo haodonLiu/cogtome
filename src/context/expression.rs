@@ -106,8 +106,8 @@ pub fn compare_values(left: &Value, op: &str, right: &Value) -> bool {
                     l.len() == r.len() && l.iter().zip(r.iter()).all(|(a, b)| compare_values(a, "==", b))
                 }
                 (Value::Object(l), Value::Object(r)) => {
-                    // Compare objects by serializing to string
-                    serde_json::to_string(l).ok() == serde_json::to_string(r).ok()
+                    // Compare objects key by key with recursive value comparison
+                    l.len() == r.len() && l.iter().all(|(k, v)| r.get(k).map_or(false, |rv| compare_values(v, "==", rv)))
                 }
                 _ => false,
             }
@@ -174,7 +174,10 @@ pub fn eval_expression(expr: &str, item: &Value, idx: usize) -> Option<Value> {
 
     // Number literal
     if let Ok(n) = expr.parse::<f64>() {
-        return Some(Value::Number(serde_json::Number::from_f64(n).unwrap_or_else(|| serde_json::Number::from(0))));
+        // NaN/Infinity are not valid JSON numbers - map to 0
+        let num = serde_json::Number::from_f64(n)
+            .unwrap_or(serde_json::Number::from(0));
+        return Some(Value::Number(num));
     }
 
     // item reference
@@ -243,5 +246,109 @@ pub fn is_truthy(value: &Value) -> bool {
         Value::String(s) => !s.is_empty() && s != "false" && s != "0",
         Value::Array(a) => !a.is_empty(),
         Value::Object(o) => !o.is_empty(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_truthy() {
+        assert!(is_truthy(&serde_json::json!(true)));
+        assert!(!is_truthy(&serde_json::json!(false)));
+        assert!(!is_truthy(&serde_json::json!(null)));
+        assert!(is_truthy(&serde_json::json!([1, 2])));
+        assert!(!is_truthy(&serde_json::json!([])));
+        assert!(is_truthy(&serde_json::json!({"a": 1})));
+        assert!(!is_truthy(&serde_json::json!({})));
+        assert!(is_truthy(&serde_json::json!("hello")));
+        assert!(!is_truthy(&serde_json::json!("")));
+        assert!(is_truthy(&serde_json::json!(42)));
+        assert!(!is_truthy(&serde_json::json!(0)));
+    }
+
+    #[test]
+    fn test_compare_values_numbers() {
+        assert!(compare_values(&serde_json::json!(5), "==", &serde_json::json!(5)));
+        assert!(!compare_values(&serde_json::json!(5), "==", &serde_json::json!(3)));
+        assert!(compare_values(&serde_json::json!(5), "!=", &serde_json::json!(3)));
+        assert!(compare_values(&serde_json::json!(5), ">", &serde_json::json!(3)));
+        assert!(compare_values(&serde_json::json!(3), "<", &serde_json::json!(5)));
+        assert!(compare_values(&serde_json::json!(5), ">=", &serde_json::json!(5)));
+        assert!(compare_values(&serde_json::json!(5), "<=", &serde_json::json!(5)));
+    }
+
+    #[test]
+    fn test_compare_values_strings() {
+        assert!(compare_values(&serde_json::json!("hello"), "==", &serde_json::json!("hello")));
+        assert!(!compare_values(&serde_json::json!("hello"), "==", &serde_json::json!("world")));
+    }
+
+    #[test]
+    fn test_compare_values_arrays() {
+        assert!(compare_values(&serde_json::json!([1, 2, 3]), "==", &serde_json::json!([1, 2, 3])));
+        assert!(!compare_values(&serde_json::json!([1, 2]), "==", &serde_json::json!([1, 2, 3])));
+    }
+
+    #[test]
+    fn test_compare_values_objects() {
+        let obj1 = serde_json::json!({"a": 1, "b": 2});
+        let obj2 = serde_json::json!({"b": 2, "a": 1});
+        let obj3 = serde_json::json!({"a": 1, "b": 3});
+        assert!(compare_values(&obj1, "==", &obj2)); // Same keys/values regardless of order
+        assert!(!compare_values(&obj1, "==", &obj3));
+    }
+
+    #[test]
+    fn test_eval_expression_number() {
+        let item = serde_json::Value::Null;
+        // Numbers parse as f64, so 42 becomes 42.0
+        assert_eq!(eval_expression("42", &item, 0), Some(serde_json::json!(42.0)));
+        assert_eq!(eval_expression("-3.14", &item, 0), Some(serde_json::json!(-3.14)));
+    }
+
+    #[test]
+    fn test_eval_expression_string() {
+        let item = serde_json::Value::Null;
+        assert_eq!(eval_expression("\"hello\"", &item, 0), Some(serde_json::json!("hello")));
+        assert_eq!(eval_expression("'world'", &item, 0), Some(serde_json::json!("world")));
+    }
+
+    #[test]
+    fn test_eval_expression_bool() {
+        let item = serde_json::Value::Null;
+        assert_eq!(eval_expression("true", &item, 0), Some(serde_json::json!(true)));
+        assert_eq!(eval_expression("false", &item, 0), Some(serde_json::json!(false)));
+    }
+
+    #[test]
+    fn test_eval_expression_item() {
+        let item = serde_json::json!({"name": "test"});
+        assert_eq!(eval_expression("item", &item, 0), Some(serde_json::json!({"name": "test"})));
+    }
+
+    #[test]
+    fn test_eval_expression_index() {
+        let item = serde_json::Value::Null;
+        assert_eq!(eval_expression("__index", &item, 5), Some(serde_json::json!(5)));
+    }
+
+    #[test]
+    fn test_eval_condition_simple() {
+        let item = serde_json::json!({"active": true});
+        assert_eq!(eval_condition("item.active == true", &item, 0), Some(true));
+        assert_eq!(eval_condition("item.active == false", &item, 0), Some(false));
+    }
+
+    #[test]
+    fn test_find_top_level_op() {
+        // "a == b && c == d" - && is at position 7
+        assert_eq!(find_top_level_op("a == b && c == d", "&&"), Some(7));
+        // "a == b || c == d" - || is at position 7
+        assert_eq!(find_top_level_op("a == b || c == d", "||"), Some(7));
+        assert_eq!(find_top_level_op("a == b && (c == d || e == f)", "&&"), Some(7));
+        // Should find == at position 2
+        assert_eq!(find_top_level_op("a == b", "=="), Some(2));
     }
 }
