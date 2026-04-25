@@ -1,0 +1,13 @@
+name: fetch-web
+type: motif
+units_required: [fetch-text]
+
+flow:
+  - name: fetch
+    unit: fetch-text
+    input:
+      url: "${params.url}"
+
+return:
+  url: "${steps.fetch.output.url}"
+  content: "${steps.fetch.output.content}"

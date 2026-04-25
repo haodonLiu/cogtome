@@ -1,0 +1,16 @@
+#!/bin/bash
+# Fetch web page and extract text
+
+read -r input
+
+# Extract URL using grep and sed instead of jq
+url=$(echo "$input" | grep -o '"url"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/"url"[[:space:]]*:[[:space:]]*"//;s/"$//')
+
+if [ -z "$url" ]; then
+  echo '{"error": "missing url field"}' >&2
+  exit 1
+fi
+
+content=$(curl -sL -m 10 "$url" | sed 's/<[^>]*>//g' | sed 's/[[:space:]]\+/ /g' | tr -d '\n' | head -c 2000)
+
+echo "{\"url\": \"$url\", \"content\": \"$content\"}"
