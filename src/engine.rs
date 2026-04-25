@@ -1,5 +1,6 @@
 use crate::context::{is_truthy, ExecContext, StepResult};
 use crate::discovery::SkillsDir;
+use crate::validation::validate_input;
 use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
 use serde_json::{Map, Value};
@@ -189,6 +190,36 @@ pub struct FlowStep {
     pub if_cond: Option<String>,
     #[serde(default)]
     pub foreach: Option<ForeachBlock>,
+    #[serde(default)]
+    pub on_error: Option<StepErrorStrategy>,
+    #[serde(default)]
+    pub fallback: Option<Value>,
+    #[serde(default)]
+    pub retry: Option<RetryConfig>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum StepErrorStrategy {
+    #[default]
+    Fail,
+    Continue,
+    Fallback,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RetryConfig {
+    pub max: u32,
+    #[serde(default = "default_backoff")]
+    pub backoff: BackoffStrategy,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum BackoffStrategy {
+    #[default]
+    Exponential,
+    Linear,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -257,6 +288,10 @@ fn default_on_error() -> ErrorStrategy {
 
 fn default_parallel() -> bool {
     false
+}
+
+fn default_backoff() -> BackoffStrategy {
+    BackoffStrategy::Exponential
 }
 
 pub struct YamlMotifEngine;
@@ -728,6 +763,15 @@ pub struct MotifRef {
     pub name: String,
 }
 
+/// Validates input against input_schema if defined in manifest.
+/// Returns Ok(()) if no schema or validation passes.
+fn validate_structure_input(manifest: &StructureManifest, input: &Value) -> Result<()> {
+    if let Some(ref schema) = manifest.input_schema {
+        validate_input(input, schema)?;
+    }
+    Ok(())
+}
+
 pub struct StructureExecutor;
 
 impl StructureExecutor {
@@ -749,6 +793,9 @@ impl StructureExecutor {
         runner: &UnitRunner,
         max_iterations_hard: u32,
     ) -> Result<Value> {
+        // Validate input against input_schema before execution
+        validate_structure_input(manifest, &input)?;
+
         let mut current = input;
 
         for motif_ref in &manifest.motifs {

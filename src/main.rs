@@ -5,6 +5,7 @@ mod discovery;
 mod engine;
 mod pack;
 mod python_motif;
+mod validation;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
