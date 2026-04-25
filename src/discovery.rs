@@ -46,12 +46,12 @@ impl SkillsDir {
     /// 查找 Unit 可执行文件：先全局，再各 Complex 私有
     pub fn find_unit(&self, name: &str) -> Option<PathBuf> {
         let global = self.root.join(&self.units_subdir).join(name).join("bin").join(name);
-        if global.exists() {
+        if global.exists() && is_executable(&global) {
             return Some(global);
         }
         Self::scan_dirs(&self.root, |p| {
             let candidate = p.join(&self.units_subdir).join(name).join("bin").join(name);
-            candidate.exists().then_some(candidate)
+            candidate.exists().then(|| candidate).filter(|c| is_executable(c))
         })
     }
 
@@ -127,6 +127,20 @@ impl SkillsDir {
         }
         None
     }
+}
+
+#[cfg(unix)]
+fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path)
+        .map(|m| m.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn is_executable(path: &Path) -> bool {
+    // On non-Unix, just check if file exists (Windows uses extensions)
+    path.exists()
 }
 
 /// Single structure entry in SKILL.md front matter

@@ -20,13 +20,13 @@ use tokio_util::sync::CancellationToken;
 pub fn emit_event(event_type: &str, data: serde_json::Map<String, Value>) {
     let mut event = data;
     event.insert("event".to_string(), Value::String(event_type.to_string()));
-    event.insert("timestamp".to_string(), Value::String(chrono_now()));
+    event.insert("timestamp".to_string(), Value::String(timestamp_now()));
     if let Ok(json) = serde_json::to_string(&event) {
         eprintln!("{}", json);
     }
 }
 
-pub fn chrono_now() -> String {
+pub fn timestamp_now() -> String {
     use std::time::SystemTime;
     let now = SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

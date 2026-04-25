@@ -140,8 +140,6 @@ impl UnitRunner {
                 if let Some(mut child) = guard.take() {
                     let _ = child.kill().await;
                 }
-                // Cleanup on timeout
-                let _ = fs::remove_dir_all(&temp_dir).await;
                 anyhow::bail!("Unit '{}' timed out after {}s", name, self.timeout_secs);
             }
         };

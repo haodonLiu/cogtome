@@ -30,7 +30,7 @@ pub fn install(package_path: &Path, skills_dir: &Path) -> Result<()> {
     let mut archive = tar::Archive::new(decoder);
 
     // Unpack to a temp directory first, then move
-    let temp_dir = std::env::temp_dir().join("cogtome-install-".to_string() + &uuid_v4());
+    let temp_dir = std::env::temp_dir().join("cogtome-install-".to_string() + &unique_id());
     std::fs::create_dir_all(&temp_dir)?;
 
     // Safe unpacking: validate each entry path to prevent zip slip
@@ -76,12 +76,7 @@ pub fn install(package_path: &Path, skills_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Generate a simple UUID for temp directory naming
-fn uuid_v4() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    format!("{:x}", now)
+/// Generate a unique ID for temp directory naming
+fn unique_id() -> String {
+    uuid::Uuid::new_v4().to_string()
 }

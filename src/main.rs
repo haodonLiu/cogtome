@@ -116,17 +116,6 @@ struct SkillsPaths {
     structures: PathBuf,
 }
 
-impl Default for SkillsPaths {
-    fn default() -> Self {
-        Self {
-            root: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("skills"),
-            units: PathBuf::from("units"),
-            motifs: PathBuf::from("motifs"),
-            structures: PathBuf::from("structures"),
-        }
-    }
-}
-
 fn resolve_skills_dir(config: &CogtomeConfig) -> SkillsPaths {
     // 环境变量 > 配置文件 > 默认值
     // paths.units 作为 root（向后兼容），motifs 和 structures 作为子目录覆盖
@@ -144,6 +133,7 @@ fn resolve_skills_dir(config: &CogtomeConfig) -> SkillsPaths {
         });
 
     // motifs 和 structures 路径：配置优先，否则使用相对于 root 的默认值
+    // Note: If config paths are absolute, they override root (user intent is respected)
     let motifs = config
         .paths
         .motifs

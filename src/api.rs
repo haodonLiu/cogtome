@@ -20,6 +20,16 @@ fn validate_name(name: &str) -> Result<(), StatusCode> {
     Ok(())
 }
 
+fn load_max_iterations_hard(skills_root: &std::path::Path) -> u32 {
+    let config_path = skills_root.join("cogtome.toml");
+    if config_path.exists() {
+        if let Ok(config) = crate::config::CogtomeConfig::load(&config_path) {
+            return config.runtime.max_iterations_hard;
+        }
+    }
+    500
+}
+
 pub async fn start_server(port: u16, skills: SkillsDir, timeout: u64) -> anyhow::Result<()> {
     let state = AppState {
         skills,
@@ -74,10 +84,16 @@ async fn get_complex(
     validate_name(&name)?;
     let complex_path = state.skills.root.join(&name).join("SKILL.md");
     let content = std::fs::read_to_string(&complex_path)
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(|e| {
+            eprintln!("[ERROR] Failed to read SKILL.md for '{}': {}", name, e);
+            StatusCode::NOT_FOUND
+        })?;
 
     let meta = crate::discovery::parse_skill_front_matter(&content)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            eprintln!("[ERROR] Failed to parse SKILL.md front matter for '{}': {}", name, e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     Ok(Json(serde_json::json!({
         "name": name,
@@ -123,65 +139,68 @@ async fn run_execution(
             }
 
             let skill_md = std::fs::read_to_string(complex_path.join("SKILL.md"))
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+                .map_err(|e| {
+                    eprintln!("[ERROR] Failed to read SKILL.md: {}", e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
             let structure_name = extract_first_structure(&skill_md)
                 .ok_or_else(|| StatusCode::NOT_FOUND)?;
 
             let path = state.skills.find_structure(&structure_name)
                 .ok_or_else(|| StatusCode::NOT_FOUND)?;
             let manifest = StructureExecutor::load(&path)
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-            let max_iter = state.skills.root.join("cogtome.toml");
-            let max_hard = if max_iter.exists() {
-                crate::config::CogtomeConfig::load(&max_iter)
-                    .map(|c| c.runtime.max_iterations_hard)
-                    .unwrap_or(500)
-            } else {
-                500
-            };
+                .map_err(|e| {
+                    eprintln!("[ERROR] Failed to load structure manifest: {}", e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+            let max_hard = load_max_iterations_hard(&state.skills.root);
             StructureExecutor::execute(&manifest, input, &state.skills, &runner, max_hard)
                 .await
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+                .map_err(|e| {
+                    eprintln!("[ERROR] Structure execution failed: {}", e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?
         }
         RunRequest::Motif { name, input } => {
             let path = state.skills.find_motif(&name)
                 .ok_or_else(|| StatusCode::NOT_FOUND)?;
             let manifest = YamlMotifEngine::load(&path)
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+                .map_err(|e| {
+                    eprintln!("[ERROR] Failed to load motif manifest: {}", e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
             let engine = YamlMotifEngine;
-            let max_iter = state.skills.root.join("cogtome.toml");
-            let max_hard = if max_iter.exists() {
-                crate::config::CogtomeConfig::load(&max_iter)
-                    .map(|c| c.runtime.max_iterations_hard)
-                    .unwrap_or(500)
-            } else {
-                500
-            };
+            let max_hard = load_max_iterations_hard(&state.skills.root);
             engine.execute(&manifest, input, &runner, max_hard)
                 .await
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+                .map_err(|e| {
+                    eprintln!("[ERROR] Motif execution failed: {}", e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?
         }
         RunRequest::Structure { name, input } => {
             let path = state.skills.find_structure(&name)
                 .ok_or_else(|| StatusCode::NOT_FOUND)?;
             let manifest = StructureExecutor::load(&path)
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-            let max_iter = state.skills.root.join("cogtome.toml");
-            let max_hard = if max_iter.exists() {
-                crate::config::CogtomeConfig::load(&max_iter)
-                    .map(|c| c.runtime.max_iterations_hard)
-                    .unwrap_or(500)
-            } else {
-                500
-            };
+                .map_err(|e| {
+                    eprintln!("[ERROR] Failed to load structure manifest: {}", e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+            let max_hard = load_max_iterations_hard(&state.skills.root);
             StructureExecutor::execute(&manifest, input, &state.skills, &runner, max_hard)
                 .await
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+                .map_err(|e| {
+                    eprintln!("[ERROR] Structure execution failed: {}", e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?
         }
         RunRequest::Unit { name, input } => {
             let (result, _exit_code) = runner.call(&name, input, None)
                 .await
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+                .map_err(|e| {
+                    eprintln!("[ERROR] Unit '{}' execution failed: {}", name, e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
             result
         }
     };
