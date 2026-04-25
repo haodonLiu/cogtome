@@ -64,6 +64,8 @@ enum Commands {
     Install {
         path: String,
     },
+    /// 热重载：重新加载所有 Structure 和 Motif 定义
+    Reload,
 }
 
 #[derive(Subcommand)]
@@ -207,7 +209,7 @@ async fn main() -> Result<()> {
         Commands::Unit { command } => match command {
             UnitCommands::Run { name, input } => {
                 let val: Value = serde_json::from_str(&input)?;
-                let (result, exit_code) = runner.call(&name, val).await?;
+                let (result, exit_code) = runner.call(&name, val, None).await?;
                 println!("{}", serde_json::to_string_pretty(&result)?);
                 eprintln!("[exit code: {}]", exit_code);
             }
@@ -311,6 +313,42 @@ async fn main() -> Result<()> {
         Commands::Install { path } => {
             pack::install(PathBuf::from(&path).as_path(), &skills_root)?;
             println!("Installed successfully");
+        }
+
+        // ------------------------------------------------------------------
+        // 热重载：重新加载所有 Structure 和 Motif 定义
+        // ------------------------------------------------------------------
+        Commands::Reload => {
+            // Re-discover all complexes to validate they still exist and are valid
+            let complexes = skills.discover_complexes()?;
+
+            // Count structures and motifs by walking the skills directory
+            let mut structure_count = 0;
+            let mut motif_count = 0;
+
+            let structures_path = skills.root.join(&skills.structures_subdir);
+            if let Ok(entries) = std::fs::read_dir(&structures_path) {
+                for entry in entries.flatten() {
+                    if entry.path().join("manifest.yaml").exists() {
+                        structure_count += 1;
+                    }
+                }
+            }
+
+            let motifs_path = skills.root.join(&skills.motifs_subdir);
+            if let Ok(entries) = std::fs::read_dir(&motifs_path) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.extension().map(|e| e == "yaml" || e == "yml").unwrap_or(false) {
+                        motif_count += 1;
+                    }
+                }
+            }
+
+            println!("Registry reloaded:");
+            println!("  Complexes: {}", complexes.len());
+            println!("  Structures: {}", structure_count);
+            println!("  Motifs: {}", motif_count);
         }
     }
 

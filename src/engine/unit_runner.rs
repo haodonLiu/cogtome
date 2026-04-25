@@ -4,6 +4,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tokio::sync::{Mutex, Semaphore};
@@ -128,7 +129,7 @@ impl UnitRunner {
         .await;
 
         // Cleanup temp directory after execution
-        let _ = std::fs::remove_dir_all(&temp_dir);
+        let _ = fs::remove_dir_all(&temp_dir).await;
 
         let output = match output {
             Ok(Ok(output)) => output,
@@ -140,7 +141,7 @@ impl UnitRunner {
                     let _ = child.kill().await;
                 }
                 // Cleanup on timeout
-                let _ = std::fs::remove_dir_all(&temp_dir);
+                let _ = fs::remove_dir_all(&temp_dir).await;
                 anyhow::bail!("Unit '{}' timed out after {}s", name, self.timeout_secs);
             }
         };

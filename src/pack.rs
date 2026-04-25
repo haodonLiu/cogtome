@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -33,7 +33,21 @@ pub fn install(package_path: &Path, skills_dir: &Path) -> Result<()> {
     let temp_dir = std::env::temp_dir().join("cogtome-install-".to_string() + &uuid_v4());
     std::fs::create_dir_all(&temp_dir)?;
 
-    archive.unpack(&temp_dir)?;
+    // Safe unpacking: validate each entry path to prevent zip slip
+    for entry in archive.entries()? {
+        let mut entry = entry.map_err(|e| anyhow!("Failed to read archive entry: {}", e))?;
+        let entry_path = entry.path()
+            .map_err(|e| anyhow!("Failed to get entry path: {}", e))?
+            .into_owned();
+
+        // Security: prevent path traversal attacks
+        let dest_path = temp_dir.join(&entry_path);
+        if !dest_path.starts_with(&temp_dir) {
+            anyhow::bail!("Archive contains invalid path that escapes target directory: {}", entry_path.display());
+        }
+
+        entry.unpack(&dest_path).map_err(|e| anyhow!("Failed to unpack entry: {}", e))?;
+    }
 
     // Find the unpacked directory (should be the skill name directory)
     let entries = std::fs::read_dir(&temp_dir)?;

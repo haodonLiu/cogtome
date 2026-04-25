@@ -13,6 +13,13 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+fn validate_name(name: &str) -> Result<(), StatusCode> {
+    if name.is_empty() || name.contains("..") || name.contains('/') || name.contains('\\') {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    Ok(())
+}
+
 pub async fn start_server(port: u16, skills: SkillsDir, timeout: u64) -> anyhow::Result<()> {
     let state = AppState {
         skills,
@@ -24,7 +31,7 @@ pub async fn start_server(port: u16, skills: SkillsDir, timeout: u64) -> anyhow:
     let app = Router::new()
         .route("/health", get(health_check))
         .route("/complexes", get(list_complexes))
-        .route("/complexes/:name", get(get_complex))
+        .route("/complexes/{name}", get(get_complex))
         .route("/run", post(run_execution))
         .with_state(state);
 
@@ -64,6 +71,7 @@ async fn get_complex(
     State(state): State<AppState>,
     Path(name): Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
+    validate_name(&name)?;
     let complex_path = state.skills.root.join(&name).join("SKILL.md");
     let content = std::fs::read_to_string(&complex_path)
         .map_err(|_| StatusCode::NOT_FOUND)?;
@@ -108,6 +116,7 @@ async fn run_execution(
 
     let result = match req {
         RunRequest::Complex { name, input } => {
+            validate_name(&name)?;
             let complex_path = state.skills.root.join(&name);
             if !complex_path.exists() {
                 return Err(StatusCode::NOT_FOUND);
@@ -170,7 +179,7 @@ async fn run_execution(
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         }
         RunRequest::Unit { name, input } => {
-            let (result, _exit_code) = runner.call(&name, input)
+            let (result, _exit_code) = runner.call(&name, input, None)
                 .await
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
             result
