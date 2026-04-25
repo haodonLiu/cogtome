@@ -1,7 +1,10 @@
+mod api;
 mod config;
 mod context;
 mod discovery;
 mod engine;
+mod pack;
+mod python_motif;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -45,6 +48,21 @@ enum Commands {
     },
     /// 发现所有 Complex
     Discover,
+    /// 启动 HTTP API 服务器
+    Serve {
+        #[arg(long, default_value = "8080")]
+        port: u16,
+    },
+    /// 打包 Skill 到 .cogtome 归档
+    Pack {
+        name: String,
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+    /// 安装 .cogtome 归档
+    Install {
+        path: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -160,6 +178,7 @@ async fn main() -> Result<()> {
     };
 
     let paths = resolve_skills_dir(&config);
+    let skills_root = paths.root.clone();
     let skills = SkillsDir::with_subdirs(paths.root, paths.units, paths.motifs, paths.structures);
     let timeout = resolve_timeout(&config);
     let max_iterations_hard = resolve_max_iterations_hard(&config);
@@ -267,6 +286,30 @@ async fn main() -> Result<()> {
                     println!("  {:20} {}", c.name, desc);
                 }
             }
+        }
+
+        // ------------------------------------------------------------------
+        // HTTP API 服务器
+        // ------------------------------------------------------------------
+        Commands::Serve { port } => {
+            api::start_server(port, skills.clone(), timeout).await?;
+        }
+
+        // ------------------------------------------------------------------
+        // 打包 Skill
+        // ------------------------------------------------------------------
+        Commands::Pack { name, output } => {
+            let output_path = output.map(PathBuf::from);
+            let packed = pack::pack(&name, &skills_root, output_path)?;
+            println!("Packed to {}", packed.display());
+        }
+
+        // ------------------------------------------------------------------
+        // 安装 Skill
+        // ------------------------------------------------------------------
+        Commands::Install { path } => {
+            pack::install(PathBuf::from(&path).as_path(), &skills_root)?;
+            println!("Installed successfully");
         }
     }
 

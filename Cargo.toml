@@ -13,3 +13,12 @@ anyhow = "1.0"
 toml = "0.8"
 futures = "0.3"
 tokio-util = "0.7"
+
+# HTTP API server
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors"] }
+
+# Pack/Install
+tar = "0.4"
+flate2 = "1.0"

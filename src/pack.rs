@@ -1,0 +1,73 @@
+use anyhow::Result;
+use flate2::read::GzDecoder;
+use flate2::write::GzEncoder;
+use flate2::Compression;
+use std::path::{Path, PathBuf};
+
+/// Pack a skill directory into a .cogtome archive
+pub fn pack(skill_name: &str, skills_dir: &Path, output: Option<PathBuf>) -> Result<PathBuf> {
+    let source = skills_dir.join(skill_name);
+    if !source.exists() {
+        anyhow::bail!("Skill '{}' not found at {}", skill_name, source.display());
+    }
+
+    let output = output.unwrap_or_else(|| PathBuf::from(format!("{skill_name}.cogtome")));
+
+    let file = std::fs::File::create(&output)?;
+    let encoder = GzEncoder::new(file, Compression::default());
+    let mut tar = tar::Builder::new(encoder);
+
+    tar.append_dir_all(skill_name, &source)?;
+    tar.finish()?;
+
+    Ok(output)
+}
+
+/// Install a .cogtome archive to the skills directory
+pub fn install(package_path: &Path, skills_dir: &Path) -> Result<()> {
+    let file = std::fs::File::open(package_path)?;
+    let decoder = GzDecoder::new(file);
+    let mut archive = tar::Archive::new(decoder);
+
+    // Unpack to a temp directory first, then move
+    let temp_dir = std::env::temp_dir().join("cogtome-install-".to_string() + &uuid_v4());
+    std::fs::create_dir_all(&temp_dir)?;
+
+    archive.unpack(&temp_dir)?;
+
+    // Find the unpacked directory (should be the skill name directory)
+    let entries = std::fs::read_dir(&temp_dir)?;
+    let mut skill_dir = None;
+    for entry in entries.flatten() {
+        if entry.path().is_dir() {
+            skill_dir = Some(entry.path());
+            break;
+        }
+    }
+
+    let skill_dir = skill_dir.ok_or_else(|| anyhow::anyhow!("Invalid package: no directory found"))?;
+    let skill_name = skill_dir.file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| anyhow::anyhow!("Invalid package: cannot determine skill name"))?;
+
+    // Move to skills directory
+    let dest = skills_dir.join(skill_name);
+    if dest.exists() {
+        anyhow::bail!("Skill '{}' already exists at {}", skill_name, dest.display());
+    }
+
+    std::fs::rename(&skill_dir, &dest)?;
+    std::fs::remove_dir_all(&temp_dir)?;
+
+    Ok(())
+}
+
+/// Generate a simple UUID for temp directory naming
+fn uuid_v4() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    format!("{:x}", now)
+}

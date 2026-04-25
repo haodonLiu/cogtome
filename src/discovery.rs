@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
@@ -16,7 +16,7 @@ impl Default for SkillsDir {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ComplexInfo {
     pub name: String,
     #[allow(dead_code)]
@@ -130,7 +130,7 @@ impl SkillsDir {
 }
 
 /// Single structure entry in SKILL.md front matter
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct StructureEntry {
     pub name: String,
     #[allow(dead_code)]
@@ -150,7 +150,7 @@ pub struct StructureEntry {
 }
 
 /// Root YAML front matter in SKILL.md
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SkillMeta {
     pub description: String,
     #[serde(default)]
