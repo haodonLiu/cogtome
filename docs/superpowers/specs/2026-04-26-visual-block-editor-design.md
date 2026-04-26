@@ -5,7 +5,7 @@
 Three new editor pages for COGTOME's WebUI:
 
 1. **Unit Editor** — edit Unit metadata, test execution, AI chat assistant
-2. **Motif Editor** — visual block editor with draggable Unit blocks and control flow containers
+2. **Motif Editor** — visual **directed graph** editor with draggable Unit blocks and port-based connections
 3. **Structure Editor** — visual block editor with Unit + Motif blocks, Motif blocks expandable
 
 ## COGTOME Layer Architecture
@@ -15,6 +15,27 @@ Structure (L3) ────► Motif (L2) ────► Unit (L1)
    blocks              blocks            atomic
  Units + Motifs       Units only        CLI executor
 ```
+
+### Motif as Directed Graph
+
+**Key design decision: Motifs are directed graphs (digraphs), not linear pipelines.**
+
+```
+Linear pipeline:    A ──► B ──► C
+
+Motif digraph:
+                    ┌──► B ──┐
+               A ───┤       ├──► D
+                    └──► C ──┘
+```
+
+**Digraph semantics:**
+- **Nodes** = Unit blocks (each unit = one step)
+- **Edges** = data flow connections (output port → input port)
+- **Execution order** = topological sort of the graph (no cycles allowed)
+- **Parallel execution** = nodes with no data dependency can run concurrently
+- **Fan-out**: one output can feed multiple inputs
+- **Fan-in**: multiple outputs can feed one input (joined at the input port)
 
 ---
 
@@ -42,15 +63,15 @@ Structure (L3) ────► Motif (L2) ────► Unit (L1)
 │  │ from specified path  │    │  Output:                        │
 │  └──────────────────────┘    │  ┌─────────────────────────┐   │
 │                              │  │ { "content": "...",      │   │
-│                              │  │   "lines": 42 }           │   │
+│                              │  │   "lines": 42 }          │   │
 │                              │  └─────────────────────────┘   │
 │                              │  ✓ Success (exit 0, 23ms)       │
 ├──────────────────────────────┴───────────────────────────────-─┤
 │  🤖 Assistant                                        [−] [×]   │
-│  ─────────────────────────────────────────────────────────────│
+│  ──────────────────────────────────────────────────────────── │
 │  You: How do I add offset support?                            │
 │  Bot: You can use the ${params.offset} variable to skip...    │
-│  ─────────────────────────────────────────────────────────────│
+│  ──────────────────────────────────────────────────────────── │
 │  [Ask the assistant about this Unit...]                [Send]  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -65,20 +86,20 @@ Structure (L3) ────► Motif (L2) ────► Unit (L1)
 - Description textarea
 
 **Test Panel (right, ~400px)**
-- Input JSON textarea (with syntax highlighting via CodeMirror or textarea)
-- "Run Test" button → calls `POST /run` with `{"type":"unit", "name":"...", "input":{...}}`
-- Output display area (JSON, with status badge: success/error/exit code)
+- Input JSON textarea (syntax highlighted)
+- "Run Test" button → calls `POST /run { "type": "unit", "name": "...", "input": {...} }`
+- Output display area (JSON + status badge: success/error/exit code)
 - Execution time display
 
 **Chat Assistant (bottom, collapsible, ~300px default)**
 - Message history (scrollable)
 - Input field with Send button
-- AI analyzes current Unit and context to answer questions
-- Powered by Claude API
+- AI analyzes current Unit context to answer questions
+- Powered by Claude API (streaming)
 
 ---
 
-## 2. Motif Editor Page
+## 2. Motif Editor Page (Directed Graph)
 
 **Route:** `/motifs/:name/edit`
 
@@ -86,109 +107,124 @@ Structure (L3) ────► Motif (L2) ────► Unit (L1)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  [←] Motif: fetch-web                              [Validate]   │
-│                                                     [Save] [×] │
-├────────────┬─────────────────────────────────────┬──────────────┤
-│ PALETTE    │  CANVAS (horizontal pipeline)       │ PROPERTIES   │
+│  [←] Motif: fetch-web                              [Validate]  │
+│                                                    [Save] [×]  │
+├────────────┬──────────────────────────────────────┬──────────────┤
+│ PALETTE   │         CANVAS (digraph)             │ PROPERTIES  │
 │            │                                     │              │
-│ ▸ UNITS    │  [fetch-text]───────►[return]      │ Step: fetch  │
-│   fetch    │                                     │              │
-│   filter   │                                     │ Input:       │
-│   map      │                                     │   url: ${    │
-│ ▸ CONTROL  │                                     │     params   │
-│   if       │                                     │     .url}    │
-│   foreach  │                                     │              │
-│ ▸ LOGIC    │                                     │              │
-│   == != >  │                                     │              │
-│   && ||    │                                     │              │
+│ ▸ UNITS   │      [fetch]───┬───►[filter]──►      │ Step: fetch │
+│   fetch   │          │     │                     │              │
+│   filter  │          └──►[log]                  │ Input:      │
+│   map     │                                     │   url: ${   │
+│ ▸ CONTROL │                                     │     params  │
+│   if      │                                     │     .url}   │
+│   foreach │                                     │              │
+│            │                                     │ Output:     │
+│            │                                     │   content   │
+│            │                                     │   url       │
 │            │                                     │              │
-│            │  [+ Add Step]  [+ Add Branch]      │              │
-├────────────┴─────────────────────────────────────┴──────────────┤
-│  [YAML Preview]  [Block View] (toggle)                         │
+│            │  [+ Add Unit]                       │              │
+├────────────┴──────────────────────────────────────┴──────────────┤
+│  [YAML View]  [Graph View] (toggle)                              │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ### Block Types
 
-**Unit Block**
+**Unit Block (node with ports)**
 ```
-┌─────────────────────┐
-│ ● fetch-text        │
-│ input | output      │
-└─────────────────────┘
-```
-- Draggable from palette to canvas
-- Click to select → properties on right
-
-**Control Flow Container (foreach)**
-```
-┌─ foreach ──────────────────┐
-│  over: [expression    ]    │
-│  max:  [50            ]    │
-│  ──────────────────────────│
-│  [Unit block here]         │
-│  [Unit block here]         │
-│  ──────────────────────────│
-│  [+ Drop unit here]        │
+         ┌──► output: content ──┐
+         │    output: url       │
+┌─────────────────────────────┐ │
+│ ● fetch                    │─┘
+│  input: url ───────────────┘
 └─────────────────────────────┘
 ```
-- C-block shape (Scratch style)
-- Expression input for `over` field
-- max_iterations input
-- Nested drop zone for unit blocks
-- Collapsible
+- **Input port(s)** — left side, labeled by parameter name
+- **Output port(s)** — right side, labeled by output field name
+- Ports have type indicators (string, array, object)
+- Click port → drag edge → connect to another node's port
 
-**Control Flow Container (if)**
+**Control Flow Blocks (if)**
 ```
-┌─ if ───────────────────────┐
-│  condition: [expression]    │
-│  ──────────────────────────│
-│  [Unit block here]          │
-│  ──────────────────────────│
-│  [+ Drop unit here]         │
-└─────────────────────────────┘
-┌─ else ─────────────────────┐
-│  ──────────────────────────│
-│  [Unit block here]          │
-│  ──────────────────────────│
-│  [+ Drop unit here]         │
+         ┌──► output ──────────┐
+         │
+┌─────────────────────────────┐ │
+│ ◇ if                        │─┘
+│  condition ─────────────────┘
+│  [Unit block]                │
+│  [Unit block]                │
 └─────────────────────────────┘
 ```
-- if/else pair
-- Condition expression input
-- Collapsible
+- Same port-based connections
+- Condition input field on left
+- Nested units inside the block
 
-**Return Block**
+**Control Flow Blocks (foreach)**
 ```
-┌──── return ─────────────────┐
-│  url: ${steps.fetch...}     │
-│  content: ${steps...}       │
+         ┌──► output ──────────┐
+         │
+┌─────────────────────────────┐ │
+│ ◇ foreach                   │─┘
+│  over ──────────────────────┘
+│  [Unit block]                │
+│  [Unit block]                │
 └─────────────────────────────┘
 ```
-- Terminal block (no output port)
-- Key-value pairs for return expressions
+- `over` expression port for iteration array
+- `max_iterations` config field
+- `parallel` toggle
 
-### Interactions
+**Return Block (terminal node)**
+```
+┌─────────────────────────────┐
+│ ◼ return                    │
+│  content ───────────────────┤
+│  url ───────────────────────┤
+└─────────────────────────────┘
+```
+- No output ports (terminal)
+- Input ports for each return field
+- Labeled key names on left
 
-- **Drag from palette to canvas** → adds new block
-- **Drag unit into foreach/if container** → nests inside
-- **Click block** → selects it, shows properties
-- **Delete key** → removes selected block
-- **Canvas scroll** → horizontal scroll for wide motifs
-- **Block collapse** → toggle to hide/show nested content
-- **View toggle** → switch between Block View and YAML Preview
+### Port Connection Rules
+
+1. **Type matching** — connect output to input of compatible type
+2. **Expression binding** — edge means `${steps.<source>.output.<field>}` passed to target input
+3. **Variable shortcuts** — clicking an input port shows quick-insert for `${params.}`, `${steps.}`
+4. **No cycles** — graph must be acyclic (validated on save)
+
+### Canvas Interactions
+
+- **Drag from palette** → creates new node at drop position
+- **Drag from port** → creates edge to another port
+- **Click node** → selects, shows properties
+- **Click edge** → selects, shows edge config (or delete)
+- **Delete key** → removes selected node/edge
+- **Pan** → middle-mouse or space+drag
+- **Zoom** → scroll wheel
+- **Auto-layout** → button to auto-arrange nodes (top-to-bottom or left-to-right)
+- **Mini-map** → bottom-right corner for navigation
 
 ### Properties Panel
 
-When a block is selected:
-- **Unit block**: shows input field mappings (key → expression)
-- **foreach block**: shows `over` expression, `max_iterations`, `parallel` toggle
-- **if block**: shows `condition` expression
-- **return block**: shows key-value editor
+When a node is selected:
+- Unit block → input field mappings, output display
+- if/foreach → condition/over expression, max_iterations, parallel toggle
+- return → key-value return expressions
+
+When an edge is selected:
+- Shows source → target connection
+- Delete edge option
+
+### View Toggle
+
+- **Graph View** — visual digraph editor (default)
+- **YAML View** — raw YAML, changes sync bidirectionally
 
 ---
 
-## 3. Structure Editor Page (Redesign)
+## 3. Structure Editor Page
 
 **Route:** `/structures/:name` (existing) | `/structures/new`
 
@@ -197,55 +233,112 @@ When a block is selected:
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  [←] Structure: fetch                               [Validate]  │
-│                                                     [Save] [×]  │
-├────────────┬─────────────────────────────────────┬──────────────┤
-│ PALETTE    │  CANVAS (horizontal pipeline)       │ PROPERTIES   │
-│            │                                     │              │
-│ ▸ MOTIFS   │  [fetch-web ▼]─────►[return]       │ Motif:       │
-│   fetch    │       │                              │   fetch-web  │
-│   filter   │   (expanded)                        │              │
-│   map      │  [fetch-text]─────►[return]         │ Input:       │
-│ ▸ UNITS    │                                     │   url: ${...}│
-│   fetch    │  [file-write]─────►                 │              │
-│ ▸ CONTROL  │                                     │ Output:      │
-│   if       │                                     │   content    │
-│   foreach  │                                     │              │
-│            │                                     │              │
-│            │  [+ Add Motif] [+ Add Unit]         │              │
-└────────────┴─────────────────────────────────────┴──────────────┘
+│                                                    [Save] [×]  │
+├────────────┬──────────────────────────────────────┬──────────────┤
+│ PALETTE   │         CANVAS (digraph)               │ PROPERTIES   │
+│            │                                      │              │
+│ ▸ MOTIFS  │   [fetch-web ▼]──►[file-write]       │ Motif:      │
+│   fetch   │        │                              │   fetch-web │
+│   filter  │    (expanded)                         │              │
+│ ▸ UNITS   │   [fetch-text]──►[return]            │ Input:      │
+│   fetch   │                                      │   url       │
+│ ▸ CONTROL │   [map-data]──►                      │              │
+│   if      │                                      │ Output:     │
+│   foreach │                                      │   bytes     │
+│            │                                      │              │
+│            │  [+ Add Motif]  [+ Add Unit]        │              │
+└────────────┴──────────────────────────────────────┴──────────────┘
 ```
 
 ### Block Types
 
 **Motif Block**
 ```
-┌─────────────────────┐
-│ ◆ fetch-web    [▼]  │  ← ◆ = Motif indicator, ▼ = expandable
-│ motifs | output     │
-└─────────────────────┘
+         ┌──► output ──────────┐
+         │
+┌─────────────────────────────┐ │
+│ ◆ fetch-web           [▼]  │─┘
+│  input: url ───────────────┘
+└─────────────────────────────┘
 ```
-- Draggable from palette
-- Click ▼ to expand/collapse inline Motif editor
-- Expanded shows Motif's internal unit blocks
-- Right panel shows Motif's input/output schema
+- ◆ = Motif indicator
+- [▼] = expand to show internal digraph
+- Click ▼ → inline expansion of Motif's internal Unit graph
+- Ports represent Motif's input_schema / output_schema
 
-**Unit Block**
-```
-┌─────────────────────┐
-│ ● fetch-text        │  ← ● = Unit indicator
-│ input | output      │
-└─────────────────────┘
-```
-- Same as Motif editor Unit block
+**Unit Block** — same as Motif editor
 
-**Control Flow Containers** — same as Motif editor
+**Control Flow Blocks** — same as Motif editor
 
 ### Key Differences from Motif Editor
 
-1. Palette includes Motif blocks (not just Units)
-2. Motif blocks are expandable inline (see internal flow)
-3. Clicking expanded Motif shows its blocks + allows editing
-4. Structure-level blocks (Motifs/Units) are top-level pipeline steps
+1. Palette includes **Motif blocks** (in addition to Units and control flow)
+2. Motif blocks are **expandable inline** — click ▼ to see/edit internal digraph
+3. When expanded, Motif block shows its internal nodes in the same canvas
+4. Structure-level blocks (Motifs/Units) form the top-level graph
+
+---
+
+## 4. Shared Graph Engine
+
+Both Motif and Structure editors share the same **graph rendering engine**:
+
+```
+Motif Editor ──┐
+               ├──► Shared React Flow canvas + graph store
+Structure Ed ──┘
+```
+
+### Graph Data Model
+
+```typescript
+interface GraphNode {
+  id: string;
+  type: 'unit' | 'if' | 'foreach' | 'return' | 'motif';
+  position: { x: number; y: number };
+  data: {
+    // unit: { name, inputs: {}, outputs: {} }
+    // if: { condition, body: GraphNode[] }
+    // foreach: { over, max_iterations, parallel, body: GraphNode[] }
+    // return: { mappings: {} }
+    // motif: { name, expanded: boolean, internalGraph: Graph }
+  };
+}
+
+interface GraphEdge {
+  id: string;
+  source: string;        // node id
+  sourceHandle: string;  // output port name
+  target: string;        // node id
+  targetHandle: string;   // input port name
+}
+
+interface Graph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+```
+
+### Serialization to YAML
+
+Graph ↔ YAML bidirectional sync:
+
+```
+Graph → YAML:
+  nodes with edges → flow array with `from`/`to` references
+
+YAML → Graph:
+  parse flow steps → reconstruct nodes and edges
+```
+
+### Execution Order
+
+Runtime determines execution order via **topological sort**:
+1. Find nodes with no input dependencies (or all inputs from params)
+2. Execute in parallel (respecting concurrency limits)
+3. As each node completes, mark dependent nodes as ready
+4. Repeat until all nodes executed
+5. Error if cycle detected
 
 ---
 
@@ -253,32 +346,21 @@ When a block is selected:
 
 ### Libraries
 
-- **React Flow** — canvas, nodes, edges, pan/zoom, drag-drop
-- **@dnd-kit** — drag from palette to canvas (existing, keep)
-- **Zustand** — state management (existing, extend)
-- **CodeMirror 6** — JSON input/output editing in Unit editor
+- **React Flow** — canvas, nodes, edges, pan/zoom, ports, auto-layout, mini-map
+- **Zustand** — state management (extend existing store)
+- **CodeMirror 6** — JSON editing in Unit editor
 - **react-markdown** — chat messages rendering
+- **yaml** — YAML parse/stringify for sync
 
 ### API Changes
 
 **New Unit endpoints needed:**
 ```
-GET  /api/units/:name           → read Unit metadata + content
-PUT  /api/units/:name           → save Unit
-POST /api/units/:name/test      → run test execution
+GET  /api/units              → list all units (existing)
+GET  /api/units/:name        → read Unit metadata
+PUT  /api/units/:name        → save Unit metadata
+POST /api/units/:name/test   → run test execution
 ```
-
-**Modified endpoints:**
-```
-POST /run { type: "unit", name, input }  → already exists, use for test
-```
-
-### Data Flow
-
-1. **Palette** → drag → **Canvas** → creates new block node
-2. Block node → stores `{ id, type, config }`
-3. Canvas → serialize to YAML → `PUT /api/motifs/:name` or `PUT /api/structures/:name`
-4. Load → `GET /api/motifs/:name` → parse YAML → reconstruct nodes
 
 ### File Structure
 
@@ -288,44 +370,41 @@ webui/src/
 │   ├── editors/
 │   │   ├── UnitEditor.tsx
 │   │   ├── MotifEditor.tsx
-│   │   ├── StructureEditor.tsx      (redesign)
+│   │   ├── StructureEditor.tsx
 │   │   ├── ChatAssistant.tsx
-│   │   ├── TestPanel.tsx
-│   │   └── blocks/
-│   │       ├── UnitBlock.tsx
-│   │       ├── ForeachBlock.tsx
-│   │       ├── IfBlock.tsx
-│   │       ├── ReturnBlock.tsx
-│   │       ├── MotifBlock.tsx
-│   │       └── BlockPalette.tsx
-│   ├── canvas/
-│   │   ├── PipelineCanvas.tsx
-│   │   ├── CanvasNode.tsx
-│   │   └── CanvasEdge.tsx
+│   │   └── TestPanel.tsx
+│   ├── graph/
+│   │   ├── GraphCanvas.tsx         (React Flow wrapper)
+│   │   ├── UnitNode.tsx
+│   │   ├── IfNode.tsx
+│   │   ├── ForeachNode.tsx
+│   │   ├── ReturnNode.tsx
+│   │   ├── MotifNode.tsx
+│   │   └── graphUtils.ts           (topo sort, serialization)
 │   └── PropertyPanel.tsx
 ├── store/
-│   ├── editorStore.ts               (Zustand, block/canvas state)
-│   └── structureStore.ts            (existing)
+│   ├── graphStore.ts               (Zustand, graph state)
+│   └── structureStore.ts           (existing)
 ├── api/
-│   └── client.ts                    (add Unit CRUD)
+│   └── client.ts                   (add Unit CRUD)
 └── types/
-    └── index.ts                     (add BlockNode, BlockEdge types)
+    └── index.ts                    (add GraphNode, GraphEdge)
 ```
 
 ### Chat Assistant
 
 - Uses Claude API (`/v1/messages`)
-- System prompt includes: current Unit/Motif/Structure YAML, COGTOME documentation
+- System prompt: current Unit/Motif/Structure context + COGTOME docs
 - Streaming responses
-- Persists in `localStorage` per session
+- Session persisted in `localStorage`
 
 ---
 
 ## Implementation Order
 
-1. **Unit Editor** — simplest, no canvas
-2. **Block palette + canvas infrastructure** — React Flow integration
-3. **Motif Editor** — Unit blocks + control flow containers
-4. **Structure Editor redesign** — Motif blocks + expansion
-5. **Chat Assistant** — Claude API integration
-6. **Polish** — animations, keyboard shortcuts, undo/redo
+1. **Graph engine** — React Flow integration, node/edge rendering
+2. **Motif Editor** — digraph with Unit nodes + if/foreach control flow
+3. **Structure Editor redesign** — Motif blocks + expansion
+4. **Unit Editor** — metadata + test panel + chat
+5. **Graph ↔ YAML sync** — bidirectional serialization
+6. **Polish** — auto-layout, mini-map, keyboard shortcuts, validation
