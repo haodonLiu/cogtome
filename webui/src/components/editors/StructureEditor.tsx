@@ -5,37 +5,19 @@ import {
   Background,
   Controls,
   MiniMap,
-  NodeChange,
-  EdgeChange,
-  Connection,
   useNodesState,
   useEdgesState,
-  OnNodesChange,
-  OnEdgesChange,
-  OnConnect,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { UnitNode } from '../graph/nodes/UnitNode';
-import { IfNode } from '../graph/nodes/IfNode';
-import { ForeachNode } from '../graph/nodes/ForeachNode';
-import { ReturnNode } from '../graph/nodes/ReturnNode';
-import { MotifNode } from '../graph/nodes/MotifNode';
+import { nodeTypes } from '../graph/nodes';
 import { BlockPalette } from '../graph/Palette';
 import { PropertyPanel } from './PropertyPanel';
-import { getMotif, saveMotif, listMotifs } from '../../api/client';
-import { BlockNode, BlockEdge, BlockType, MotifInfo } from '../../types';
+import { getStructure, saveStructure, listMotifs } from '../../api/client';
+import { BlockNode, BlockEdge, BlockType, MotifInfo } from '../../types/index';
 import { autoLayout } from '../graph/graphUtils';
 import YAML from 'yaml';
 
-const nodeTypes = {
-  unit: UnitNode,
-  if: IfNode,
-  foreach: ForeachNode,
-  return: ReturnNode,
-  motif: MotifNode,
-};
-
-export function MotifEditor() {
+export function StructureEditor() {
   const { name } = useParams<{ name: string }>();
   const navigate = useNavigate();
   const [motifs, setMotifs] = useState<MotifInfo[]>([]);
@@ -47,8 +29,8 @@ export function MotifEditor() {
   useEffect(() => {
     listMotifs().then(setMotifs).catch(() => {});
     if (name) {
-      getMotif(name).then((yaml) => {
-        const { nodes: parsedNodes, edges: parsedEdges } = parseMotifYaml(yaml);
+      getStructure(name).then((manifest) => {
+        const { nodes: parsedNodes, edges: parsedEdges } = parseStructureManifest(manifest, motifs);
         setNodes(parsedNodes.map(toRFNode));
         setEdges(parsedEdges.map(toRFEdge));
       }).catch(() => {});
@@ -67,8 +49,8 @@ export function MotifEditor() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedNode, selectedEdge]);
 
-  const onConnect: OnConnect = useCallback(
-    (connection: Connection) => {
+  const onConnect = useCallback(
+    (connection: any) => {
       if (!connection.source || !connection.target) return;
       const edge: BlockEdge = {
         id: `edge-${Date.now()}`,
@@ -93,13 +75,6 @@ export function MotifEditor() {
     setSelectedEdge(blockEdge || null);
     setSelectedNode(null);
   }, [edges]);
-
-  const onNodesChangeHandler: OnNodesChange = useCallback(
-    (changes: NodeChange[]) => {
-      onNodesChange(changes);
-    },
-    [onNodesChange]
-  );
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -160,8 +135,8 @@ export function MotifEditor() {
 
   const handleSave = async () => {
     if (!name) return;
-    const yaml = graphToYaml(nodes as BlockNode[], edges as BlockEdge[], name);
-    await saveMotif(name, yaml);
+    const manifest = graphToStructureManifest(nodes as BlockNode[], edges as BlockEdge[], name);
+    await saveStructure(name, manifest);
   };
 
   return (
@@ -169,7 +144,7 @@ export function MotifEditor() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 16px', background: '#0f0f1a', borderBottom: '1px solid #3b3b5c' }}>
         <button onClick={() => navigate(-1)} style={buttonStyle}>← Back</button>
-        <h2 style={{ margin: 0, flex: 1, color: '#e2e8f0', fontFamily: 'monospace' }}>Motif: {name}</h2>
+        <h2 style={{ margin: 0, flex: 1, color: '#e2e8f0', fontFamily: 'monospace' }}>Structure: {name}</h2>
         <button onClick={handleSave} style={buttonStyle}>Save</button>
         <button
           onClick={() => {
@@ -186,9 +161,7 @@ export function MotifEditor() {
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         <BlockPalette
           motifs={motifs}
-          onDragStart={(type, blockName) => {
-            // Store drag data
-          }}
+          onDragStart={(type, blockName) => {}}
         />
 
         <div
@@ -199,7 +172,7 @@ export function MotifEditor() {
           <ReactFlow
             nodes={nodes}
             edges={edges}
-            onNodesChange={onNodesChangeHandler}
+            onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onNodeClick={onNodeClick}
@@ -231,26 +204,21 @@ function createNodeData(type: BlockType, name?: string): BlockNode['data'] {
   switch (type) {
     case 'unit':
       return { name: name || '', inputs: { input: '' }, outputs: [{ id: 'out-1', name: 'output', type: 'string' }] };
+    case 'motif':
+      return { name: name || '', expanded: false };
     case 'if':
       return { condition: '' };
     case 'foreach':
       return { over: '', maxIterations: 50, parallel: false };
     case 'return':
       return { mappings: {} };
-    case 'motif':
-      return { name: name || '' };
     default:
       return {};
   }
 }
 
 function toRFNode(node: BlockNode) {
-  return {
-    id: node.id,
-    type: node.type,
-    position: node.position,
-    data: node.data,
-  };
+  return { id: node.id, type: node.type, position: node.position, data: node.data };
 }
 
 function toRFEdge(edge: BlockEdge) {
@@ -265,32 +233,24 @@ function toRFEdge(edge: BlockEdge) {
   };
 }
 
-function parseMotifYaml(yamlString: string): { nodes: BlockNode[]; edges: BlockEdge[] } {
-  const doc = YAML.parse(yamlString);
-  if (!doc || !doc.flow) return { nodes: [], edges: [] };
-
+function parseStructureManifest(manifest: any, motifs: MotifInfo[]): { nodes: BlockNode[]; edges: BlockEdge[] } {
   const nodes: BlockNode[] = [];
   const edges: BlockEdge[] = [];
   let xOffset = 50;
 
-  doc.flow.forEach((step: any, index: number) => {
-    const nodeId = `${step.name || step.unit || 'step'}-${index}`;
-    const position = { x: xOffset, y: 150 };
+  if (!manifest || !manifest.motifs) return { nodes, edges };
 
-    if (step.return) {
-      nodes.push({ id: nodeId, type: 'return', position, data: { mappings: step.return } });
-    } else if (step.foreach) {
-      nodes.push({ id: nodeId, type: 'foreach', position, data: { name: step.name, over: step.foreach.over, maxIterations: step.foreach.max_iterations, parallel: step.foreach.parallel } });
-    } else if (step.if) {
-      nodes.push({ id: nodeId, type: 'if', position, data: { name: step.name, condition: step.if.condition } });
-    } else if (step.unit) {
-      nodes.push({ id: nodeId, type: 'unit', position, data: { name: step.unit, inputs: step.input || {} } });
-    }
-
+  manifest.motifs.forEach((ref: any) => {
+    const nodeId = `${ref.name}-${xOffset}`;
+    nodes.push({
+      id: nodeId,
+      type: 'motif',
+      position: { x: xOffset, y: 150 },
+      data: { name: ref.name, expanded: false },
+    });
     xOffset += 220;
   });
 
-  // Sequential edges
   for (let i = 0; i < nodes.length - 1; i++) {
     edges.push({
       id: `edge-${i}`,
@@ -304,39 +264,18 @@ function parseMotifYaml(yamlString: string): { nodes: BlockNode[]; edges: BlockE
   return { nodes, edges };
 }
 
-function graphToYaml(nodes: BlockNode[], edges: BlockEdge[], name: string): string {
-  const flow = nodes.map((node) => {
-    const incomingEdges = edges.filter((e) => e.target === node.id);
-    const inputMappings: Record<string, string> = {};
+function graphToStructureManifest(nodes: BlockNode[], edges: BlockEdge[], name: string): any {
+  const motifRefs = nodes
+    .filter((n) => n.type === 'motif')
+    .map((n) => ({ name: n.data.name || '' }));
 
-    incomingEdges.forEach((edge) => {
-      const sourceNode = nodes.find((n) => n.id === edge.source);
-      if (sourceNode && edge.targetHandle) {
-        inputMappings[edge.targetHandle] = `\${steps.${sourceNode.data.name || edge.source}.output.${edge.sourceHandle}}`;
-      }
-    });
-
-    if (node.data.inputs) {
-      Object.entries(node.data.inputs).forEach(([key, val]) => {
-        if (val) inputMappings[key] = val;
-      });
-    }
-
-    switch (node.type) {
-      case 'unit':
-        return { name: node.data.name || node.id, unit: node.data.name, input: inputMappings };
-      case 'foreach':
-        return { name: node.data.name || node.id, foreach: { over: node.data.over || '', as_var: 'item', max_iterations: node.data.maxIterations || 50, parallel: node.data.parallel || false, flow: [] } };
-      case 'if':
-        return { name: node.data.name || node.id, if: { condition: node.data.condition || '', then: [], else: [] } };
-      case 'return':
-        return { return: node.data.mappings || {} };
-      default:
-        return null;
-    }
-  }).filter(Boolean);
-
-  return YAML.stringify({ name, type: 'motif', flow }, { indent: 2 });
+  return {
+    name,
+    type: 'structure',
+    motifs: motifRefs,
+    input_schema: undefined,
+    output_schema: undefined,
+  };
 }
 
 const buttonStyle: React.CSSProperties = {
