@@ -43,3 +43,43 @@ export interface ValidationError {
   path: string;
   message: string;
 }
+
+// Graph types for visual editor
+export type BlockType = 'unit' | 'if' | 'foreach' | 'return' | 'motif';
+
+export interface Port {
+  id: string;
+  name: string;
+  type: 'string' | 'number' | 'boolean' | 'array' | 'object';
+}
+
+export interface BlockNode {
+  id: string;
+  type: BlockType;
+  position: { x: number; y: number };
+  data: {
+    name?: string;
+    inputs?: Record<string, string>;
+    outputs?: Port[];
+    condition?: string;
+    over?: string;
+    maxIterations?: number;
+    parallel?: boolean;
+    mappings?: Record<string, string>;
+    expanded?: boolean;
+    internalGraph?: Graph;
+  };
+}
+
+export interface BlockEdge {
+  id: string;
+  source: string;
+  sourceHandle: string;
+  target: string;
+  targetHandle: string;
+}
+
+export interface Graph {
+  nodes: BlockNode[];
+  edges: BlockEdge[];
+}
