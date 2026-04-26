@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getUnit, saveUnit } from '../../api/client';
+import { ChatAssistant } from './ChatAssistant';
 
 export function UnitEditor() {
   const { name } = useParams<{ name: string }>();
@@ -132,6 +133,8 @@ export function UnitEditor() {
           </div>
         </div>
       </div>
+
+      <ChatAssistant context={{ type: 'unit', name: name || '' }} />
     </div>
   );
 }
