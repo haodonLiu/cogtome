@@ -47,6 +47,16 @@ export async function getMotif(name: string): Promise<string> {
   return response.text();
 }
 
+export async function saveMotif(name: string, yaml: string): Promise<{ message: string }> {
+  const response = await fetch(`${API_BASE}/motifs/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'text/plain' },
+    body: yaml,
+  });
+  if (!response.ok) throw new Error('Failed to save motif');
+  return { message: 'Motif saved' };
+}
+
 // Units API
 export async function listUnits(): Promise<UnitInfo[]> {
   return fetchJson<UnitInfo[]>(`${API_BASE}/units`);

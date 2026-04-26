@@ -4,6 +4,7 @@ import { StructureList } from './components/StructureList';
 import { StructureEditor } from './components/StructureEditor';
 import { MotifList } from './components/MotifList';
 import { MotifViewer } from './components/MotifViewer';
+import { MotifEditor } from './components/editors/MotifEditor';
 import { UnitEditor } from './components/editors/UnitEditor';
 
 function App() {
@@ -17,6 +18,7 @@ function App() {
           <Route path="/structures/:name" element={<StructureEditor />} />
           <Route path="/motifs" element={<MotifList />} />
           <Route path="/motifs/:name" element={<MotifViewer />} />
+          <Route path="/motifs/:name/edit" element={<MotifEditor />} />
           <Route path="/units/:name" element={<UnitEditor />} />
         </Routes>
       </Layout>
