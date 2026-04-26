@@ -1,0 +1,33 @@
+name: file-read
+type: structure
+
+motifs:
+  - name: file-read
+
+input_schema:
+  type: object
+  required: [path]
+  properties:
+    path:
+      type: string
+      description: "File path to read"
+    offset:
+      type: number
+      description: "Line offset (optional)"
+    limit:
+      type: number
+      description: "Line limit (optional)"
+
+output_schema:
+  type: object
+  properties:
+    path:
+      type: string
+    content:
+      type: string
+    lines:
+      type: number
+
+resources:
+  units:
+    - file-read

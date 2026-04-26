@@ -14,14 +14,21 @@ pub struct CogtomeConfig {
     pub units: UnitsConfig,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize)]
 pub struct RuntimeConfig {
     #[serde(default = "default_max_iterations")]
-    #[allow(dead_code)]
     pub max_iterations: u32,
     #[serde(default = "default_max_iterations_hard")]
-    #[allow(dead_code)]
     pub max_iterations_hard: u32,
+}
+
+impl Default for RuntimeConfig {
+    fn default() -> Self {
+        Self {
+            max_iterations: default_max_iterations(),
+            max_iterations_hard: default_max_iterations_hard(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -114,5 +121,59 @@ impl Default for CogtomeConfig {
             paths: PathsConfig::default(),
             units: UnitsConfig::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_config() {
+        let config = CogtomeConfig::default();
+        assert_eq!(config.runtime.max_iterations, 50);
+        assert_eq!(config.runtime.max_iterations_hard, 500);
+        assert_eq!(config.units.defaults.timeout_secs, 30);
+    }
+
+    #[test]
+    fn test_load_config() {
+        let tmp_path = std::env::temp_dir().join("cogtome_test_config.toml");
+        let toml_content = r#"
+[runtime]
+max_iterations = 100
+max_iterations_hard = 1000
+
+[paths]
+units = "./my-units"
+
+[units.defaults]
+timeout_secs = 60
+
+[units.concurrency.my-unit]
+max_global = 5
+resource_key = "api_quota"
+"#;
+        std::fs::write(&tmp_path, toml_content).unwrap();
+
+        let config = CogtomeConfig::load(&tmp_path).unwrap();
+        assert_eq!(config.runtime.max_iterations, 100);
+        assert_eq!(config.runtime.max_iterations_hard, 1000);
+        assert_eq!(config.paths.units.as_deref(), Some("./my-units"));
+        assert_eq!(config.units.defaults.timeout_secs, 60);
+        assert_eq!(config.units.concurrency.get("my-unit").unwrap().max_global, Some(5));
+
+        std::fs::remove_file(tmp_path).ok();
+    }
+
+    #[test]
+    fn test_load_config_minimal() {
+        let tmp_path = std::env::temp_dir().join("cogtome_test_empty.toml");
+        std::fs::write(&tmp_path, "").unwrap();
+        let config = CogtomeConfig::load(&tmp_path).unwrap();
+        // Should use defaults
+        assert_eq!(config.runtime.max_iterations, 50);
+
+        std::fs::remove_file(tmp_path).ok();
     }
 }

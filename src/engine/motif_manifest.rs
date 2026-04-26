@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -122,7 +122,7 @@ pub struct JoinConfig {
 // Structure Manifest
 // ============================================================================
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct StructureManifest {
     #[allow(dead_code)]
     pub name: String,
@@ -138,7 +138,7 @@ pub struct StructureManifest {
     pub output_schema: Option<Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct MotifRef {
     pub name: String,
 }

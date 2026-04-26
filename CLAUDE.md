@@ -8,11 +8,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 cargo build --release                    # Build
 cargo test                               # Run all tests
 cargo test discovery::tests              # Run specific test module
+cargo test context::expression::tests    # Run expression engine tests
 ./target/release/cogtome discover       # Scan all Complexes
-./target/release/cogtome run <complex>  # Execute Complex → Structure → Motif → Unit
+./target/release/cogtome run <complex> --input '<json>'  # Execute Complex → Structure → Motif → Unit
 ./target/release/cogtome unit run <name> --input '<json>'  # Run Unit directly
 ./target/release/cogtome motif run <name> --input '<json>'  # Run Motif
 ./target/release/cogtome structure run <name> --input '<json>' # Run Structure
+./target/release/cogtome serve --port 8080  # Start HTTP API server (Axum)
+./target/release/cogtome pack <skill>       # Pack skill into .cogtome archive
+./target/release/cogtome install <path>     # Install .cogtome archive
+./target/release/cogtome reload             # Hot-reload Structure/Motif definitions
 ```
 
 **Environment variables:**
@@ -39,13 +44,24 @@ Agent → Complex (L4) → Structure (L3) → Motif (L2) → Unit (L1)
 
 | File | Responsibility |
 |------|----------------|
-| `main.rs` | CLI entry via clap. Routes to Unit/Motif/Structure/Run/Discover commands. Loads `cogtome.toml` config |
-| `engine.rs` | `UnitRunner` (tokio::process + semaphore rate limiting), `YamlMotifEngine` (serial/parallel execution), `StructureExecutor` |
-| `context.rs` | `ExecContext` holds params + steps; `resolve_var()` handles `${params.x}`, `${steps.name.output.field}`, expressions, functions |
+| `main.rs` | CLI entry via clap. Routes to Unit/Motif/Structure/Run/Discover/Serve/Pack/Install/Reload commands. Loads `cogtome.toml` config |
+| `engine/mod.rs` | Module re-exports for `engine/` sub-modules |
+| `engine/unit_runner.rs` | `UnitRunner` — tokio::process execution with semaphore rate limiting, timeout, sandboxed temp dirs |
+| `engine/foreach.rs` | Foreach loop execution with aggregation strategies (array/object/sum/join) |
+| `engine/motif_manifest.rs` | YAML manifest structures for motifs and flow steps |
+| `context/mod.rs` | Module re-exports for `context/` sub-modules |
+| `context/variables.rs` | `ExecContext` holds params + steps; `resolve_var()` handles `${...}` variable resolution |
+| `context/expression.rs` | Expression evaluation engine — functions (`filter`, `map`), conditions, ternary, array indexing |
 | `discovery.rs` | `SkillsDir` — two-phase lookup: global paths first, then Complex-private paths. `parse_skill_front_matter()` parses SKILL.md YAML front matter |
 | `config.rs` | `CogtomeConfig` loads `cogtome.toml` with runtime, paths, and units concurrency settings |
+| `api.rs` | HTTP API server (Axum) — `/health`, `/complexes`, `/complexes/{name}`, `/run` endpoints |
+| `pack.rs` | `.cogtome` archive pack/install (tar+gzip) |
+| `python_motif.rs` | Python motif engine — JSON-RPC 2.0 over Unix sockets |
+| `validation.rs` | JSON Schema validation via `jsonschema` crate |
 
 **Unit contract**: stdin/stdout JSON, exit codes 0=success, 1=input error, 2=retryable, 3=dependency unavailable. Runtime injects `COGTOME_UNIT_MODE=1`, `COGTOME_EXECUTION_ID`, `COGTOME_TRACE_ID`.
+
+**Tests**: Live in `discovery::tests` and `context::expression::tests`. No separate tests/ directory.
 
 ## Skills Directory
 

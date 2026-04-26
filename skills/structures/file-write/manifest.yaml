@@ -1,0 +1,33 @@
+name: file-write
+type: structure
+
+motifs:
+  - name: file-write
+
+input_schema:
+  type: object
+  required: [path, content]
+  properties:
+    path:
+      type: string
+      description: "File path to write"
+    content:
+      type: string
+      description: "Content to write"
+    create_dir:
+      type: boolean
+      description: "Create parent directories if needed"
+
+output_schema:
+  type: object
+  properties:
+    path:
+      type: string
+    bytes:
+      type: number
+    created:
+      type: boolean
+
+resources:
+  units:
+    - file-write

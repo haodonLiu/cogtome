@@ -1,0 +1,17 @@
+name: file-write
+type: motif
+units_required:
+  - file-write
+
+flow:
+  - name: write_file
+    unit: file-write
+    input:
+      path: "${params.path}"
+      content: "${params.content}"
+      create_dir: "${params.create_dir}"
+
+return:
+  path: "${params.path}"
+  bytes: "${steps.write_file.output.bytes}"
+  created: "${steps.write_file.output.created}"

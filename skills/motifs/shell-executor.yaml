@@ -1,0 +1,16 @@
+name: shell-executor
+type: motif
+units_required:
+  - shell-run
+
+flow:
+  - name: execute
+    unit: shell-run
+    input:
+      command: "${params.command}"
+      timeout: "${params.timeout}"
+
+return:
+  stdout: "${steps.execute.output.stdout}"
+  stderr: "${steps.execute.output.stderr}"
+  exit_code: "${steps.execute.output.exit_code}"

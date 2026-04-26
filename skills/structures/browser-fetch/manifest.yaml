@@ -1,0 +1,25 @@
+name: browser-fetch
+type: structure
+
+motifs:
+  - name: browser-fetch
+
+input_schema:
+  type: object
+  required: [url]
+  properties:
+    url:
+      type: string
+      description: URL to fetch
+
+output_schema:
+  type: object
+  properties:
+    url:
+      type: string
+    content:
+      type: string
+
+resources:
+  units:
+    - camoufox-fetch

@@ -1,0 +1,51 @@
+name: file-operations
+input_schema:
+  type: object
+  required: [operation]
+  properties:
+    operation:
+      type: string
+      enum: [read, write]
+      description: "Operation type: read or write"
+    path:
+      type: string
+      description: "File path"
+    content:
+      type: string
+      description: "Content to write (for write operation)"
+    create_dir:
+      type: boolean
+      description: "Create parent directories if needed"
+    offset:
+      type: number
+      description: "Line offset for reading"
+    limit:
+      type: number
+      description: "Line limit for reading"
+
+units_required:
+  - file-read
+  - file-write
+
+flow:
+  - name: read_file
+    unit: file-read
+    condition: "${operation == 'read'}"
+    input:
+      path: "${path}"
+      offset: "${offset}"
+      limit: "${limit}"
+
+  - name: write_file
+    unit: file-write
+    condition: "${operation == 'write'}"
+    input:
+      path: "${path}"
+      content: "${content}"
+      create_dir: "${create_dir}"
+
+return:
+  path: "${path}"
+  content: "${steps.read_file.output.content}"
+  bytes: "${steps.write_file.output.bytes}"
+  created: "${steps.write_file.output.created}"

@@ -1,0 +1,46 @@
+name: file-operations
+type: structure
+
+motifs:
+  - name: file-operations
+
+input_schema:
+  type: object
+  required: [operation, path]
+  properties:
+    operation:
+      type: string
+      enum: [read, write]
+      description: "Operation type: read or write"
+    path:
+      type: string
+      description: "File path"
+    content:
+      type: string
+      description: "Content to write (for write operation)"
+    create_dir:
+      type: boolean
+      description: "Create parent directories if needed"
+    offset:
+      type: number
+      description: "Line offset for reading"
+    limit:
+      type: number
+      description: "Line limit for reading"
+
+output_schema:
+  type: object
+  properties:
+    path:
+      type: string
+    content:
+      type: string
+    bytes:
+      type: number
+    created:
+      type: boolean
+
+resources:
+  units:
+    - file-read
+    - file-write

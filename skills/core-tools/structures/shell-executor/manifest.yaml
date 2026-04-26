@@ -1,0 +1,26 @@
+name: shell-executor
+input_schema:
+  type: object
+  required: [command]
+  properties:
+    command:
+      type: string
+      description: Shell command to execute
+    timeout:
+      type: number
+      description: Timeout in seconds (optional)
+
+units_required:
+  - shell-run
+
+flow:
+  - name: execute
+    unit: shell-run
+    input:
+      command: "${command}"
+      timeout: "${timeout}"
+
+return:
+  stdout: "${steps.execute.output.stdout}"
+  stderr: "${steps.execute.output.stderr}"
+  exit_code: "${steps.execute.output.exit_code}"

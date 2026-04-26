@@ -18,9 +18,13 @@ tokio-util = "0.7"
 
 # HTTP API server
 axum = "0.7"
-tower = "0.4"
-tower-http = { version = "0.5", features = ["cors"] }
+tower = { version = "0.4", features = ["util"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
 
 # Pack/Install
 tar = "0.4"
 flate2 = "1.0"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }

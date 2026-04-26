@@ -3,8 +3,12 @@ mod config;
 mod context;
 mod discovery;
 mod engine;
+mod error;
+mod metrics;
 mod pack;
 mod python_motif;
+mod services;
+mod shutdown;
 mod validation;
 
 use anyhow::Result;
@@ -66,6 +70,10 @@ enum Commands {
     },
     /// 热重载：重新加载所有 Structure 和 Motif 定义
     Reload,
+    /// 验证 Motif 或 Structure manifest 文件
+    Validate {
+        path: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -156,6 +164,28 @@ fn resolve_skills_dir(config: &CogtomeConfig) -> SkillsPaths {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Initialize tracing subscriber
+    let log_format = std::env::var("COGTOME_LOG_FORMAT")
+        .unwrap_or_else(|_| "pretty".to_string());
+    let log_level = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string());
+
+    match log_format.as_str() {
+        "json" => {
+            tracing_subscriber::fmt()
+                .with_env_filter(&log_level)
+                .json()
+                .init();
+        }
+        _ => {
+            tracing_subscriber::fmt()
+                .with_env_filter(&log_level)
+                .pretty()
+                .init();
+        }
+    }
+
+    tracing::info!("cogtome starting up");
+
     let cli = Cli::parse();
 
     // 加载配置文件
@@ -285,7 +315,15 @@ async fn main() -> Result<()> {
         // HTTP API 服务器
         // ------------------------------------------------------------------
         Commands::Serve { port } => {
-            api::start_server(port, skills.clone(), timeout).await?;
+            let graceful = shutdown::GracefulShutdown::new();
+            let token = graceful.token();
+
+            api::start_server_with_shutdown(port, skills.clone(), timeout, token).await?;
+
+            // Log graceful shutdown completion
+            if graceful.is_shutdown_requested() {
+                tracing::info!("HTTP server shutdown complete");
+            }
         }
 
         // ------------------------------------------------------------------
@@ -339,6 +377,17 @@ async fn main() -> Result<()> {
             println!("  Complexes: {}", complexes.len());
             println!("  Structures: {}", structure_count);
             println!("  Motifs: {}", motif_count);
+        }
+
+        // ------------------------------------------------------------------
+        // 验证：检查 Motif 或 Structure manifest 文件
+        // ------------------------------------------------------------------
+        Commands::Validate { path } => {
+            let path = PathBuf::from(&path);
+            if !path.exists() {
+                anyhow::bail!("File not found: {}", path.display());
+            }
+            validation::validate_manifest_file(&path, &skills)?;
         }
     }
 

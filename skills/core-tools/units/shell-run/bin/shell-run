@@ -1,0 +1,30 @@
+#!/bin/bash
+# Unit: shell-run
+# Wraps OpenClaw exec tool
+# Input:  {"command": "string", "timeout?: number}
+# Output: {"stdout": "string", "stderr": "string", "exit_code": number}
+
+read -r input
+
+command=$(echo "$input" | grep -o '"command"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/"command"[[:space:]]*:[[:space:]]*"//;s/"$//')
+timeout=$(echo "$input" | grep -o '"timeout"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]*$')
+
+if [ -z "$command" ]; then
+  echo '{"error": "missing command field"}' >&2
+  exit 1
+fi
+
+if [ -n "$timeout" ]; then
+  result=$(timeout "$timeout" bash -c "$command" 2>&1)
+  exit_code=$?
+else
+  result=$(bash -c "$command" 2>&1)
+  exit_code=$?
+fi
+
+# Escape result for JSON
+stdout_escaped=$(printf '%s' "$result" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr -d '\n')
+stderr_escaped=""
+exit_code_escaped="$exit_code"
+
+echo "{\"stdout\": \"$stdout_escaped\", \"stderr\": \"$stderr_escaped\", \"exit_code\": $exit_code_escaped}"

@@ -1,0 +1,28 @@
+name: file-operations
+type: motif
+units_required:
+  - file-read
+  - file-write
+
+flow:
+  - name: read_file
+    if: "${params.operation == 'read'}"
+    unit: file-read
+    input:
+      path: "${params.path}"
+      offset: "${params.offset}"
+      limit: "${params.limit}"
+
+  - name: write_file
+    if: "${params.operation == 'write'}"
+    unit: file-write
+    input:
+      path: "${params.path}"
+      content: "${params.content}"
+      create_dir: "${params.create_dir}"
+
+return:
+  path: "${params.path}"
+  content: "${steps.read_file.output.content}"
+  bytes: "${steps.write_file.output.bytes}"
+  created: "${steps.write_file.output.created}"

@@ -1,0 +1,26 @@
+#!/bin/bash
+# Fetch web page using LightPanda headless browser (JS-rendered support)
+
+read -r input
+
+# Extract URL using grep and sed
+url=$(echo "$input" | grep -o '"url"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/"url"[[:space:]]*:[[:space:]]*"//;s/"$//')
+
+if [ -z "$url" ]; then
+  echo '{"error": "missing url field"}' >&2
+  exit 1
+fi
+
+# Use LightPanda for JS-rendered pages
+LIGHTPANDA="$HOME/.cache/lightpanda-node/lightpanda"
+if [ -x "$LIGHTPANDA" ]; then
+  content=$("$LIGHTPANDA" fetch --dump markdown --wait-ms 8000 "$url" 2>/dev/null)
+else
+  # Fallback to basic curl
+  content=$(curl -sL -m 15 "$url" 2>/dev/null | sed 's/<[^>]*>//g' | sed 's/[[:space:]]\+/ /g' | tr -d '\n\r' | head -c 10000)
+fi
+
+# Escape content for JSON
+content_escaped=$(printf '%s' "$content" | sed 's/\\/\\\\/g; s/"/\\"/g; s/$/\\n/g' | tr -d '\n')
+
+echo "{\"url\": \"$url\", \"content\": \"$content_escaped\"}"

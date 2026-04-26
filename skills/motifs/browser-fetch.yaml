@@ -1,0 +1,14 @@
+name: browser-fetch
+type: motif
+units_required:
+  - camoufox-fetch
+
+flow:
+  - name: fetch
+    unit: camoufox-fetch
+    input:
+      url: "${params.url}"
+
+return:
+  url: "${steps.fetch.output.url}"
+  content: "${steps.fetch.output.content}"

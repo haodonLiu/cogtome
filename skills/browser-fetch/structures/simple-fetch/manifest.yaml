@@ -1,0 +1,21 @@
+name: simple-fetch
+input_schema:
+  type: object
+  required: [url]
+  properties:
+    url:
+      type: string
+      description: URL to fetch
+
+units_required:
+  - camoufox-fetch
+
+flow:
+  - name: fetch
+    unit: camoufox-fetch
+    input:
+      url: "${url}"
+
+return:
+  url: "${url}"
+  content: "${steps.fetch.output.content}"

@@ -1,0 +1,26 @@
+#!/bin/bash
+# Fetch web page using Jina AI reader API
+# Always returns clean text content
+
+set -e
+
+read -r input
+
+# Extract URL
+url=$(echo "$input" | grep -o '"url"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/"url"[[:space:]]*:[[:space:]]*"//;s/"$//')
+
+if [ -z "$url" ]; then
+  echo '{"error": "missing url field"}' >&2
+  exit 1
+fi
+
+# Call Jina reader API
+content=$(curl -sL -m 15 "https://r.jina.ai/$url" 2>/dev/null)
+
+if [ -n "$content" ]; then
+  echo "{\"url\": \"$url\", \"content\": $(echo "$content" | jq -Rs .)}"
+  exit 0
+fi
+
+echo "{\"error\": \"jina reader failed\", \"url\": \"$url\"}" >&2
+exit 1

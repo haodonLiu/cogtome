@@ -1,0 +1,30 @@
+name: shell-executor
+type: structure
+
+motifs:
+  - name: shell-executor
+
+input_schema:
+  type: object
+  required: [command]
+  properties:
+    command:
+      type: string
+      description: Shell command to execute
+    timeout:
+      type: number
+      description: Timeout in seconds (optional)
+
+output_schema:
+  type: object
+  properties:
+    stdout:
+      type: string
+    stderr:
+      type: string
+    exit_code:
+      type: number
+
+resources:
+  units:
+    - shell-run

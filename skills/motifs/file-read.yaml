@@ -1,0 +1,17 @@
+name: file-read
+type: motif
+units_required:
+  - file-read
+
+flow:
+  - name: read_file
+    unit: file-read
+    input:
+      path: "${params.path}"
+      offset: "${params.offset}"
+      limit: "${params.limit}"
+
+return:
+  path: "${params.path}"
+  content: "${steps.read_file.output.content}"
+  lines: "${steps.read_file.output.lines}"

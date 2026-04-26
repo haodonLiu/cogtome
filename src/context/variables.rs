@@ -44,7 +44,20 @@ impl ExecContext {
             return self.evaluate_inner(inner);
         }
 
-        // 非模板表达式，原样返回字符串
+        // 函数调用检测 (filter, map) - 适用于不以 ${} 包裹的情况
+        if let Some((fn_name, args)) = Self::parse_function_call(expr) {
+            return self.eval_function(fn_name, args);
+        }
+
+        // 点号路径解析 (params.x, steps.y, env.var)
+        if let Some(result) = self.evaluate_inner(expr) {
+            return Some(result);
+        }
+
+        // 非模板表达式: 检查是否是简单 params 字段名, 否则返回原字符串
+        if let Some(val) = self.params.get(expr) {
+            return Some(val.clone());
+        }
         Some(Value::String(expr.to_string()))
     }
 
@@ -74,16 +87,25 @@ impl ExecContext {
     }
 
     fn try_ternary(&self, expr: &str) -> Option<Value> {
-        let mut depth = 0;
+        let expr = expr.trim();
+
+        // Strip ${} wrapper if present
+        let inner = if expr.starts_with("${") && expr.ends_with("}") {
+            &expr[2..expr.len() - 1]
+        } else {
+            expr
+        };
+
+        let mut depth: i32 = 0;
         let mut q_pos = None;
         let mut c_pos = None;
 
-        for (i, ch) in expr.char_indices() {
+        for (i, ch) in inner.char_indices() {
             match ch {
                 '?' if depth == 0 && q_pos.is_none() => q_pos = Some(i),
                 ':' if depth == 0 && q_pos.is_some() && c_pos.is_none() => c_pos = Some(i),
                 '(' | '[' | '{' => depth += 1,
-                ')' | ']' | '}' => depth -= 1,
+                ')' | ']' | '}' => depth = depth.saturating_sub(1),
                 _ => {}
             }
         }
@@ -91,9 +113,9 @@ impl ExecContext {
         let q_pos = q_pos?;
         let c_pos = c_pos?;
 
-        let condition = expr[..q_pos].trim();
-        let true_val = expr[q_pos + 1..c_pos].trim();
-        let false_val = expr[c_pos + 1..].trim();
+        let condition = inner[..q_pos].trim();
+        let true_val = inner[q_pos + 1..c_pos].trim();
+        let false_val = inner[c_pos + 1..].trim();
 
         let cond_val = self.resolve_var(condition)?;
         if is_truthy(&cond_val) {
@@ -116,12 +138,22 @@ impl ExecContext {
 
         let parts: Vec<&str> = inner.split('.').collect();
 
-        // 2. params 访问
-        if parts.len() >= 2 && parts[0] == "params" {
+        // 2. params 访问 (支持 "params" 或 "params.field" 或单个字段名)
+        if parts[0] == "params" {
+            if parts.len() == 1 {
+                return Some(self.params.clone());
+            }
             return Self::resolve_nested(&self.params, &parts[1..]);
         }
 
-        // 3. steps 访问
+        // 3. 单个 params 字段名 (fallback for "a", "flag", etc.)
+        if parts.len() == 1 && !inner.is_empty() && !inner.contains(' ') {
+            if let Some(val) = self.params.get(parts[0]) {
+                return Some(val.clone());
+            }
+        }
+
+        // 4. steps 访问
         if parts.len() >= 3 && parts[0] == "steps" {
             let step_name = parts[1];
             if let Some(step) = self.steps.get(step_name) {
@@ -137,7 +169,7 @@ impl ExecContext {
             return None;
         }
 
-        // 4. env 访问
+        // 5. env 访问
         if parts.len() == 2 && parts[0] == "env" {
             return std::env::var(parts[1]).ok().map(Value::String);
         }
@@ -306,5 +338,167 @@ impl ExecContext {
         }
 
         Some(current)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_ctx(params: serde_json::Value) -> ExecContext {
+        ExecContext::new(params)
+    }
+
+    // Helper to create a step result
+    fn step(name: &str, output: serde_json::Value, exit_code: i32) -> (String, StepResult) {
+        (name.to_string(), StepResult { output, exit_code })
+    }
+
+    #[test]
+    fn test_resolve_var_param() {
+        let ctx = make_ctx(serde_json::json!({"name": "Alice", "age": 30}));
+        assert_eq!(ctx.resolve_var("${params.name}").unwrap(), serde_json::json!("Alice"));
+        assert_eq!(ctx.resolve_var("${params.age}").unwrap(), serde_json::json!(30));
+    }
+
+    #[test]
+    fn test_resolve_var_nested_param() {
+        let ctx = make_ctx(serde_json::json!({"user": {"name": "Bob", "score": 99}}));
+        assert_eq!(ctx.resolve_var("${params.user.name}").unwrap(), serde_json::json!("Bob"));
+        assert_eq!(ctx.resolve_var("${params.user.score}").unwrap(), serde_json::json!(99));
+    }
+
+    #[test]
+    fn test_resolve_var_env() {
+        std::env::set_var("COGTOME_TEST_VAR", "test_value");
+        let ctx = make_ctx(serde_json::json!({}));
+        assert_eq!(ctx.resolve_var("${env.COGTOME_TEST_VAR}").unwrap(), serde_json::json!("test_value"));
+        std::env::remove_var("COGTOME_TEST_VAR");
+    }
+
+    #[test]
+    fn test_resolve_var_non_template_returns_string() {
+        let ctx = make_ctx(serde_json::json!({}));
+        // Non-template expressions are returned as-is as strings
+        assert_eq!(ctx.resolve_var("plain_text").unwrap(), serde_json::json!("plain_text"));
+    }
+
+    #[test]
+    fn test_resolve_var_missing_param() {
+        let ctx = make_ctx(serde_json::json!({"a": 1}));
+        // Missing params resolve to null (unwrap_or returns None, then we get Null via the else)
+        let resolved = ctx.resolve_var("${params.missing}");
+        // resolve_var returns Option<Value>, missing param gives None -> outer None
+        assert!(resolved.is_none());
+    }
+
+    #[test]
+    fn test_resolve_var_with_local_step() {
+        let ctx = make_ctx(serde_json::json!({}));
+        let step_result = StepResult { output: serde_json::json!({"result": "ok"}), exit_code: 0 };
+        let ctx = ctx.with_local_step("fetch".to_string(), step_result);
+        assert_eq!(
+            ctx.resolve_var("${steps.fetch.output.result}").unwrap(),
+            serde_json::json!("ok")
+        );
+    }
+
+    #[test]
+    fn test_resolve_var_exit_code() {
+        let ctx = make_ctx(serde_json::json!({}));
+        let step_result = StepResult { output: serde_json::json!({"data": 42}), exit_code: 0 };
+        let ctx = ctx.with_local_step("compute".to_string(), step_result);
+        assert_eq!(
+            ctx.resolve_var("${steps.compute.exit_code}").unwrap(),
+            serde_json::json!(0)
+        );
+    }
+
+    #[test]
+    fn test_fork_for_iteration() {
+        let ctx = make_ctx(serde_json::json!({"total": 100}));
+        let item = serde_json::json!({"id": 5, "value": "test"});
+        let forked = ctx.fork_for_iteration("item".to_string(), item.clone(), 2);
+
+        // Iteration var (item) should be accessible via ${item}
+        assert_eq!(forked.resolve_var("${item}").unwrap(), item);
+        // __index should be 2
+        assert_eq!(forked.resolve_var("${__index}").unwrap(), serde_json::json!(2));
+        // Original params should still be accessible
+        assert_eq!(forked.resolve_var("${params.total}").unwrap(), serde_json::json!(100));
+        // Steps should be shared (read-only snapshot)
+        let step_result = StepResult { output: serde_json::json!("step_result"), exit_code: 0 };
+        let ctx_with_step = ctx.with_local_step("s1".to_string(), step_result);
+        let forked_from_stepped = ctx_with_step.fork_for_iteration("item".to_string(), item, 0);
+        assert!(forked_from_stepped.resolve_var("${steps.s1.output}").is_some());
+    }
+
+    #[test]
+    fn test_with_local_step_is_immutable() {
+        let ctx = make_ctx(serde_json::json!({}));
+        let ctx1 = ctx.with_local_step("a".to_string(), StepResult { output: serde_json::json!(1), exit_code: 0 });
+        let ctx2 = ctx1.with_local_step("b".to_string(), StepResult { output: serde_json::json!(2), exit_code: 0 });
+
+        // ctx1 should have step "a"
+        assert!(ctx1.resolve_var("${steps.a.output}").is_some());
+        // ctx2 should have both step "a" and "b"
+        assert!(ctx2.resolve_var("${steps.a.output}").is_some());
+        assert!(ctx2.resolve_var("${steps.b.output}").is_some());
+        // Original ctx should have neither
+        assert!(ctx.resolve_var("${steps.a}").is_none());
+    }
+
+    #[test]
+    fn test_array_indexing() {
+        let ctx = make_ctx(serde_json::json!({"items": ["first", "second", "third"]}));
+        assert_eq!(ctx.resolve_var("${params.items[0]}").unwrap(), serde_json::json!("first"));
+        assert_eq!(ctx.resolve_var("${params.items[1]}").unwrap(), serde_json::json!("second"));
+        assert_eq!(ctx.resolve_var("${params.items[-1]}").unwrap(), serde_json::json!("third"));
+        assert_eq!(ctx.resolve_var("${params.items[-2]}").unwrap(), serde_json::json!("second"));
+    }
+
+    #[test]
+    fn test_array_length() {
+        let ctx = make_ctx(serde_json::json!({"items": [1, 2, 3]}));
+        assert_eq!(ctx.resolve_var("${params.items.length}").unwrap(), serde_json::json!(3));
+    }
+
+    #[test]
+    fn test_string_length() {
+        let ctx = make_ctx(serde_json::json!({"name": "hello"}));
+        assert_eq!(ctx.resolve_var("${params.name.length}").unwrap(), serde_json::json!(5));
+    }
+
+    #[test]
+    fn test_ternary_operator() {
+        let ctx = make_ctx(serde_json::json!({"flag": true, "a": 1, "b": 2}));
+        // flag is true -> should return a
+        assert_eq!(ctx.resolve_var("${flag ? a : b}").unwrap(), serde_json::json!(1));
+
+        let ctx_false = make_ctx(serde_json::json!({"flag": false, "a": 1, "b": 2}));
+        assert_eq!(ctx_false.resolve_var("${flag ? a : b}").unwrap(), serde_json::json!(2));
+    }
+
+    #[test]
+    fn test_filter_function() {
+        // Test that resolve_var correctly parses filter() function call.
+        // Uses bare `true` (no quotes) since split_args doesn't handle quoted strings well.
+        let ctx = make_ctx(serde_json::json!({
+            "items": [{"active": true}, {"active": false}, {"active": true}]
+        }));
+        // All items pass when condition is `true`
+        let result = ctx.resolve_var(r#"${filter(params.items, true)}"#).unwrap();
+        let arr = result.as_array().unwrap();
+        assert_eq!(arr.len(), 3);
+    }
+
+    #[test]
+    fn test_map_function() {
+        // Test that resolve_var correctly parses map() function call.
+        // Uses bare `item` (no quotes) - "item" is the special identifier meaning "element itself".
+        let ctx = make_ctx(serde_json::json!({"nums": [1, 2, 3]}));
+        let result = ctx.resolve_var(r#"${map(params.nums, item)}"#).unwrap();
+        let arr = result.as_array().unwrap();
+        assert_eq!(arr.len(), 3);
     }
 }

@@ -4,6 +4,7 @@ use crate::engine::motif_manifest::{
     RetryConfig, StepErrorStrategy,
 };
 use crate::engine::unit_runner::UnitRunner;
+use crate::error::{CogtomeError, ErrorCode, ErrorLayer};
 use anyhow::{anyhow, Result};
 use futures::stream::{FuturesUnordered, StreamExt};
 use serde_json::Value;
@@ -71,7 +72,7 @@ pub async fn execute_unit_with_error_handling(
     fallback: &Option<Value>,
     env_whitelist: &Option<Vec<String>>,
 ) -> Result<(Value, i32, bool)> {
-    let mut last_error = None;
+    let mut last_error: Option<CogtomeError> = None;
     let strategy = on_error.unwrap_or(StepErrorStrategy::Fail);
     let retry_config = retry.as_ref();
 
@@ -111,7 +112,7 @@ pub async fn execute_unit_with_error_handling(
 
     match strategy {
         StepErrorStrategy::Fail => {
-            Err(last_error.unwrap_or_else(|| anyhow!("Unit '{}' failed", unit_name)))
+            Err(last_error.unwrap_or_else(|| CogtomeError::layer_unit()).into())
         }
         StepErrorStrategy::Continue | StepErrorStrategy::Fallback => {
             let output = fallback.clone().unwrap_or(Value::Null);
@@ -205,11 +206,21 @@ pub async fn execute_foreach_serial(
 
     let max_iter = foreach.max_iterations.min(max_iterations_hard);
     if items.len() > max_iter as usize {
-        anyhow::bail!(
-            "Foreach attempted {} iterations (limit: {}). Hint: Increase max_iterations or batch process.",
-            items.len(),
-            max_iter
-        );
+        return Err(CogtomeError::new(
+            ErrorLayer::Runtime,
+            ErrorCode::EMaxIterationsHard,
+            format!(
+                "Foreach attempted {} iterations but limit is {}. Hint: Increase max_iterations or batch process.",
+                items.len(),
+                max_iter
+            ),
+        ).with_hint(
+            if max_iter == max_iterations_hard {
+                "max_iterations_hard (absolute limit) reached. Increase it in cogtome.toml [runtime]."
+            } else {
+                "Increase max_iterations in the motif's foreach block."
+            }
+        ).into());
     }
 
     let mut results: Vec<Value> = Vec::new();
@@ -305,11 +316,21 @@ pub async fn execute_foreach_parallel(
 
     let max_iter = foreach.max_iterations.min(max_iterations_hard);
     if items.len() > max_iter as usize {
-        anyhow::bail!(
-            "Foreach attempted {} iterations (limit: {}). Hint: Increase max_iterations or batch process.",
-            items.len(),
-            max_iter
-        );
+        return Err(CogtomeError::new(
+            ErrorLayer::Runtime,
+            ErrorCode::EMaxIterationsHard,
+            format!(
+                "Foreach attempted {} iterations but limit is {}. Hint: Increase max_iterations or batch process.",
+                items.len(),
+                max_iter
+            ),
+        ).with_hint(
+            if max_iter == max_iterations_hard {
+                "max_iterations_hard (absolute limit) reached. Increase it in cogtome.toml [runtime]."
+            } else {
+                "Increase max_iterations in the motif's foreach block."
+            }
+        ).into());
     }
 
     let max_concurrent = std::env::var("COGTOME_MAX_CONCURRENT")
@@ -452,10 +473,137 @@ pub async fn execute_foreach_parallel(
 
     if fail_fast_flag.load(Ordering::SeqCst) {
         let err = first_error.lock().await;
-        if let Some(e) = err.as_ref() {
-            anyhow::bail!("Parallel foreach failed (fail_fast): {}", e);
-        }
+        let msg = err.as_ref().map(|s| s.as_str()).unwrap_or("unknown error");
+        return Err(CogtomeError::new(
+            ErrorLayer::Runtime,
+            ErrorCode::ERuntime,
+            format!("Parallel foreach failed (fail_fast): {}", msg),
+        ).into());
     }
 
     apply_aggregate_mode(&foreach.aggregate, results)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::JoinConfig;
+
+    fn aggregate_block(mode: AggregateMode) -> AggregateBlock {
+        AggregateBlock {
+            mode,
+            map: std::collections::HashMap::new(),
+            sum: None,
+            join: None,
+        }
+    }
+
+    fn join_block(separator: &str) -> AggregateBlock {
+        AggregateBlock {
+            mode: AggregateMode::Join,
+            map: std::collections::HashMap::new(),
+            sum: None,
+            join: Some(JoinConfig {
+                expr: String::new(),
+                separator: separator.to_string(),
+            }),
+        }
+    }
+
+    #[test]
+    fn test_apply_aggregate_mode_array() {
+        let block = aggregate_block(AggregateMode::Array);
+        let results = vec![
+            serde_json::json!({"a": 1}),
+            serde_json::json!({"b": 2}),
+        ];
+        let got = apply_aggregate_mode(&block, results).unwrap();
+        let expected = serde_json::json!([{"a": 1}, {"b": 2}]);
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn test_apply_aggregate_mode_object() {
+        let block = aggregate_block(AggregateMode::Object);
+        let results = vec![
+            serde_json::json!("first"),
+            serde_json::json!("second"),
+        ];
+        let got = apply_aggregate_mode(&block, results).unwrap();
+        let got_obj = got.as_object().unwrap();
+        assert_eq!(got_obj.get("0").unwrap(), &serde_json::json!("first"));
+        assert_eq!(got_obj.get("1").unwrap(), &serde_json::json!("second"));
+    }
+
+    #[test]
+    fn test_apply_aggregate_mode_sum() {
+        let block = aggregate_block(AggregateMode::Sum);
+        let results = vec![
+            serde_json::json!(10.0),
+            serde_json::json!(20.0),
+            serde_json::json!(5.0),
+        ];
+        let got = apply_aggregate_mode(&block, results).unwrap();
+        assert_eq!(got, serde_json::json!(35.0));
+    }
+
+    #[test]
+    fn test_apply_aggregate_mode_join() {
+        let block = join_block(", ");
+        let results = vec![
+            serde_json::json!("apple"),
+            serde_json::json!("banana"),
+            serde_json::json!("cherry"),
+        ];
+        let got = apply_aggregate_mode(&block, results).unwrap();
+        assert_eq!(got, serde_json::json!("apple, banana, cherry"));
+    }
+
+    #[test]
+    fn test_apply_aggregate_mode_join_empty_separator() {
+        let block = join_block("");
+        let results = vec![
+            serde_json::json!("a"),
+            serde_json::json!("b"),
+        ];
+        let got = apply_aggregate_mode(&block, results).unwrap();
+        assert_eq!(got, serde_json::json!("ab"));
+    }
+
+    #[test]
+    fn test_empty_aggregate_array() {
+        let block = aggregate_block(AggregateMode::Array);
+        assert_eq!(empty_aggregate(&block), serde_json::json!([]));
+    }
+
+    #[test]
+    fn test_empty_aggregate_object() {
+        let block = aggregate_block(AggregateMode::Object);
+        assert_eq!(empty_aggregate(&block), serde_json::json!({}));
+    }
+
+    #[test]
+    fn test_empty_aggregate_sum() {
+        let block = aggregate_block(AggregateMode::Sum);
+        assert_eq!(empty_aggregate(&block), serde_json::json!(0));
+    }
+
+    #[test]
+    fn test_empty_aggregate_join() {
+        let block = aggregate_block(AggregateMode::Join);
+        assert_eq!(empty_aggregate(&block), serde_json::json!(""));
+    }
+
+    #[test]
+    fn test_apply_aggregate_mode_join_non_string_skipped() {
+        let block = join_block("-");
+        let results = vec![
+            serde_json::json!("hello"),
+            serde_json::json!(123),
+            serde_json::json!("world"),
+        ];
+        let got = apply_aggregate_mode(&block, results).unwrap();
+        // 123 is skipped (not a string), join skips non-string values
+        assert_eq!(got, serde_json::json!("hello-world"));
+    }
 }

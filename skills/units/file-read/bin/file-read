@@ -1,0 +1,41 @@
+#!/bin/bash
+# Unit: file-read
+# Wraps OpenClaw read tool
+# Input:  {"path": "string", "offset?: number, "limit?: number}
+# Output: {"path": "string", "content": "string", "lines": number}
+
+read -r input
+
+path=$(echo "$input" | grep -o '"path"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/"path"[[:space:]]*:[[:space:]]*"//;s/"$//')
+offset=$(echo "$input" | grep -o '"offset"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]*$' | head -1)
+limit=$(echo "$input" | grep -o '"limit"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]*$' | head -1)
+
+if [ -z "$path" ]; then
+  echo '{"error": "missing path field"}' >&2
+  exit 1
+fi
+
+if [ ! -f "$path" ]; then
+  echo "{\"error\": \"file not found: $path\"}" >&2
+  exit 1
+fi
+
+# Read file with optional offset and limit
+if [ -n "$offset" ] && [ -n "$limit" ]; then
+  content=$(sed -n "${offset},$((offset + limit - 1))p" "$path" 2>/dev/null)
+  lines=$(sed -n "${offset},$((offset + limit - 1))p" "$path" 2>/dev/null | wc -l)
+elif [ -n "$offset" ]; then
+  content=$(tail -n "+$offset" "$path" 2>/dev/null)
+  lines=$(tail -n "+$offset" "$path" 2>/dev/null | wc -l)
+elif [ -n "$limit" ]; then
+  content=$(head -n "$limit" "$path" 2>/dev/null)
+  lines=$(head -n "$limit" "$path" 2>/dev/null | wc -l)
+else
+  content=$(cat "$path" 2>/dev/null)
+  lines=$(wc -l < "$path" 2>/dev/null || echo 0)
+fi
+
+# Escape content for JSON
+content_escaped=$(printf '%s' "$content" | sed 's/\\/\\\\/g; s/"/\\"/g')
+
+echo "{\"path\": \"$path\", \"content\": \"$content_escaped\", \"lines\": $lines}"
