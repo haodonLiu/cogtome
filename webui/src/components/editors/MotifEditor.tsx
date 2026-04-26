@@ -24,7 +24,7 @@ import { BlockPalette } from '../graph/Palette';
 import { PropertyPanel } from './PropertyPanel';
 import { getMotif, saveMotif, listMotifs } from '../../api/client';
 import { BlockNode, BlockEdge, BlockType, MotifInfo } from '../../types';
-import { autoLayout } from '../graph/graphUtils';
+import { autoLayout, yamlToGraph } from '../graph/graphUtils';
 import YAML from 'yaml';
 
 const nodeTypes = {
@@ -41,6 +41,7 @@ export function MotifEditor() {
   const [motifs, setMotifs] = useState<MotifInfo[]>([]);
   const [selectedNode, setSelectedNode] = useState<BlockNode | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<BlockEdge | null>(null);
+  const [viewMode, setViewMode] = useState<'graph' | 'yaml'>('graph');
   const [nodes, setNodes, onNodesChange] = useNodesState<BlockNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<BlockEdge>([]);
 
@@ -169,7 +170,22 @@ export function MotifEditor() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 16px', background: '#0f0f1a', borderBottom: '1px solid #3b3b5c' }}>
         <button onClick={() => navigate(-1)} style={buttonStyle}>← Back</button>
-        <h2 style={{ margin: 0, flex: 1, color: '#e2e8f0', fontFamily: 'monospace' }}>Motif: {name}</h2>
+        <h2 style={{ margin: 0, color: '#e2e8f0', fontFamily: 'monospace' }}>Motif: {name}</h2>
+        <div style={{ display: 'flex', gap: 4, flex: 1 }} />
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button
+            onClick={() => setViewMode('graph')}
+            style={{ ...viewButtonStyle, background: viewMode === 'graph' ? '#7c3aed' : '#1a1a2e' }}
+          >
+            Graph
+          </button>
+          <button
+            onClick={() => setViewMode('yaml')}
+            style={{ ...viewButtonStyle, background: viewMode === 'yaml' ? '#7c3aed' : '#1a1a2e' }}
+          >
+            YAML
+          </button>
+        </div>
         <button onClick={handleSave} style={buttonStyle}>Save</button>
         <button
           onClick={() => {
@@ -191,29 +207,54 @@ export function MotifEditor() {
           }}
         />
 
-        <div
-          style={{ flex: 1, position: 'relative' }}
-          onDragOver={handleDragOver}
-          onDrop={handleDrop}
-        >
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChangeHandler}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onNodeClick={onNodeClick}
-            onEdgeClick={onEdgeClick}
-            nodeTypes={nodeTypes}
-            fitView
-            snapToGrid
-            snapGrid={[16, 16]}
+        {viewMode === 'yaml' ? (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <textarea
+              value={graphToYaml(nodes as BlockNode[], edges as BlockEdge[], name || '')}
+              onChange={(e) => {
+                try {
+                  const { nodes: parsed } = yamlToGraph(e.target.value, name || '');
+                  setNodes(parsed.map(toRFNode) as any);
+                  setEdges([]);
+                } catch {}
+              }}
+              style={{
+                flex: 1,
+                background: '#0f0f1a',
+                color: '#e2e8f0',
+                fontFamily: 'monospace',
+                fontSize: 13,
+                padding: 16,
+                border: 'none',
+                resize: 'none',
+              }}
+            />
+          </div>
+        ) : (
+          <div
+            style={{ flex: 1, position: 'relative' }}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
           >
-            <Background />
-            <Controls />
-            <MiniMap />
-          </ReactFlow>
-        </div>
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChangeHandler}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              onNodeClick={onNodeClick}
+              onEdgeClick={onEdgeClick}
+              nodeTypes={nodeTypes}
+              fitView
+              snapToGrid
+              snapGrid={[16, 16]}
+            >
+              <Background />
+              <Controls />
+              <MiniMap />
+            </ReactFlow>
+          </div>
+        )}
 
         <PropertyPanel
           selectedNode={selectedNode as BlockNode | null}
@@ -346,5 +387,16 @@ const buttonStyle: React.CSSProperties = {
   padding: '8px 16px',
   borderRadius: 4,
   cursor: 'pointer',
+  fontFamily: 'monospace',
+};
+
+const viewButtonStyle: React.CSSProperties = {
+  background: '#1a1a2e',
+  color: '#e2e8f0',
+  border: '1px solid #3b3b5c',
+  padding: '6px 12px',
+  borderRadius: 4,
+  cursor: 'pointer',
+  fontSize: 12,
   fontFamily: 'monospace',
 };
