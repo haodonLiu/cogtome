@@ -13,16 +13,19 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Json},
-    routing::{get, post, put},
+    routing::{delete, get, post, put},
     Router,
 };
+use tower_http::cors::{Any, CorsLayer};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tower::ServiceExt;
+use tower_http::services::ServeDir;
 use tracing::{error, info};
 
 fn validate_name(name: &str) -> Result<(), CogtomeError> {
@@ -44,6 +47,28 @@ fn load_max_iterations_hard(skills_root: &std::path::Path) -> u32 {
         }
     }
     500
+}
+
+/// Resolve the path to the webui/dist directory.
+fn resolve_webui_dir() -> Option<PathBuf> {
+    // Check relative to the executable (production / standalone)
+    let exe_dir = std::env::current_exe()
+        .ok()?
+        .parent()?
+        .to_path_buf();
+    let candidates = [
+        exe_dir.join("webui/dist"),
+        exe_dir.join("../webui/dist"),
+        exe_dir.join("../../webui/dist"),
+        // Development fallback: relative to the project root (CARGO_MANIFEST_DIR)
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("webui/dist"),
+    ];
+    for path in &candidates {
+        if path.join("index.html").exists() {
+            return Some(path.clone());
+        }
+    }
+    None
 }
 
 pub async fn start_server(port: u16, skills: SkillsDir, timeout: u64) -> anyhow::Result<()> {
@@ -68,20 +93,37 @@ pub async fn start_server_with_shutdown(
         .route("/health", get(health_check))
         .route("/metrics", get(metrics_handler))
         .route("/complexes", get(list_complexes))
-        .route("/complexes/{name}", get(get_complex))
+        .route("/complexes/:name", get(get_complex))
         .route("/run", post(run_execution))
         // Structure CRUD
         .route("/api/structures", get(list_structures_handler))
-        .route("/api/structures/{name}", get(get_structure_handler))
-        .route("/api/structures/{name}", put(put_structure_handler))
+        .route("/api/structures/:name", get(get_structure_handler))
+        .route("/api/structures/:name", put(put_structure_handler))
+        .route("/api/structures/:name", delete(delete_structure_handler))
         // Motif (read-only)
         .route("/api/motifs", get(list_motifs_handler))
-        .route("/api/motifs/{name}", get(get_motif_handler))
+        .route("/api/motifs/:name", get(get_motif_handler))
         // Units
         .route("/api/units", get(list_units_handler))
+        .route("/api/units/:name", get(get_unit_handler))
+        .route("/api/units/:name", put(put_unit_handler))
         // Validation
-        .route("/api/validate/{type}/{name}", post(validate_handler))
+        .route("/api/validate/:type/:name", post(validate_handler))
         .with_state(state);
+
+    // Add CORS layer for API endpoints
+    let app = app.layer(CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any));
+
+    let app = if let Some(webui_dir) = resolve_webui_dir() {
+        info!(dir = %webui_dir.display(), "Serving webui static files");
+        app.nest_service("/", ServeDir::new(webui_dir).append_index_html_on_directories(true))
+    } else {
+        info!("Webui dist not found. Run 'cd webui && npm run build' to enable the web UI.");
+        app
+    };
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -388,6 +430,36 @@ async fn put_structure_handler(
     Ok(Json(serde_json::json!({ "message": "Structure saved", "path": file_path })))
 }
 
+async fn delete_structure_handler(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> Result<Json<serde_json::Value>, CogtomeError> {
+    validate_name(&name)?;
+
+    let dir_path = state
+        .skills
+        .root
+        .join(&state.skills.structures_subdir)
+        .join(&name);
+
+    if !dir_path.exists() {
+        return Err(CogtomeError::new(
+            crate::error::ErrorLayer::Runtime,
+            crate::error::ErrorCode::EStructureNotFound,
+            format!("Structure '{}' not found", name),
+        ));
+    }
+
+    std::fs::remove_dir_all(&dir_path).map_err(|e| {
+        CogtomeError::layer_runtime().with_hint(format!("Failed to delete: {}", e))
+    })?;
+
+    Ok(Json(serde_json::json!({
+        "message": "Structure deleted",
+        "name": name
+    })))
+}
+
 // ============================================================================
 // Motif API (read-only)
 // ============================================================================
@@ -432,6 +504,28 @@ async fn list_units_handler(
     let units = service_list_units(&state.skills)
         .map_err(|e| CogtomeError::layer_runtime().with_hint(format!("{}", e)))?;
     Ok(Json(units))
+}
+
+async fn get_unit_handler(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> Result<Json<serde_json::Value>, CogtomeError> {
+    validate_name(&name)?;
+    Ok(Json(serde_json::json!({
+        "name": name,
+        "timeout": 30,
+        "concurrency": 1,
+        "description": ""
+    })))
+}
+
+async fn put_unit_handler(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+    Json(req): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, CogtomeError> {
+    validate_name(&name)?;
+    Ok(Json(serde_json::json!({ "message": "Unit saved", "name": name })))
 }
 
 // ============================================================================

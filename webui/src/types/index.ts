@@ -32,6 +32,9 @@ export interface MotifInfo {
 export interface UnitInfo {
   name: string;
   path: string;
+  timeout?: number;
+  concurrency?: number;
+  description?: string;
 }
 
 export interface ValidationResult {

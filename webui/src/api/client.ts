@@ -28,6 +28,12 @@ export async function saveStructure(name: string, manifest: StructureManifest): 
   });
 }
 
+export async function deleteStructure(name: string): Promise<{ message: string; name: string }> {
+  return fetchJson<{ message: string; name: string }>(`${API_BASE}/structures/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  });
+}
+
 // Motifs API (read-only)
 export async function listMotifs(): Promise<MotifInfo[]> {
   return fetchJson<MotifInfo[]>(`${API_BASE}/motifs`);
@@ -44,6 +50,20 @@ export async function getMotif(name: string): Promise<string> {
 // Units API
 export async function listUnits(): Promise<UnitInfo[]> {
   return fetchJson<UnitInfo[]>(`${API_BASE}/units`);
+}
+
+export async function getUnit(name: string): Promise<any> {
+  const response = await fetch(`${API_BASE}/units/${encodeURIComponent(name)}`);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+export async function saveUnit(name: string, config: { timeout?: number; concurrency?: number; description?: string }): Promise<{ message: string }> {
+  return fetchJson<{ message: string }>(`${API_BASE}/units/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
 }
 
 // Validation API
