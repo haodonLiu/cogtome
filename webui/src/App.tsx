@@ -18,9 +18,11 @@ function App() {
           <Route path="/structures/new" element={<StructureEditor />} />
           <Route path="/structures/:name" element={<StructureEditor />} />
           <Route path="/motifs" element={<MotifList />} />
+          <Route path="/motifs/new" element={<MotifEditor />} />
           <Route path="/motifs/:name" element={<MotifViewer />} />
           <Route path="/motifs/:name/edit" element={<MotifEditor />} />
           <Route path="/units" element={<UnitList />} />
+          <Route path="/units/new" element={<UnitEditor />} />
           <Route path="/units/:name" element={<UnitEditor />} />
         </Routes>
       </Layout>

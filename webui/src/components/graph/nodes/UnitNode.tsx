@@ -10,7 +10,7 @@ interface UnitNodeData {
 }
 
 export const UnitNode = memo(({ data, selected }: NodeProps) => {
-  const nodeData = data as UnitNodeData;
+  const nodeData = (data || {}) as UnitNodeData;
   const { name, inputs = {}, outputs = [] } = nodeData;
   const config = NODE_TYPE_CONFIGS.unit;
   const color = config.color;
@@ -25,6 +25,7 @@ export const UnitNode = memo(({ data, selected }: NodeProps) => {
           position={Position.Left}
           color={color}
           size={10}
+          id="input"
         />
       )}
 
@@ -49,6 +50,7 @@ export const UnitNode = memo(({ data, selected }: NodeProps) => {
           position={Position.Right}
           color="#22c55e"
           size={10}
+          id="output"
         />
       )}
     </div>

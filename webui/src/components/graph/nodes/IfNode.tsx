@@ -10,7 +10,7 @@ interface IfNodeData {
 }
 
 export const IfNode = memo(({ data, selected }: NodeProps) => {
-  const nodeData = data as IfNodeData;
+  const nodeData = (data || {}) as IfNodeData;
   const { condition = '', expanded = false } = nodeData;
   const config = NODE_TYPE_CONFIGS.if;
   const color = config.color;
@@ -24,6 +24,7 @@ export const IfNode = memo(({ data, selected }: NodeProps) => {
         position={Position.Left}
         color={color}
         size={10}
+        id="input"
       />
 
       <div style={getNodeHeaderStyle()}>
@@ -49,6 +50,7 @@ export const IfNode = memo(({ data, selected }: NodeProps) => {
         position={Position.Right}
         color="#22c55e"
         size={10}
+        id="output"
       />
     </div>
   );

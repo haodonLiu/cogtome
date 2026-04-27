@@ -15,3 +15,4 @@ credentials.json
 webui/node_modules
 webui/dist
 webui/package-lock.json
+.claude/worktrees/

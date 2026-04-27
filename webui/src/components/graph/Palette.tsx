@@ -13,6 +13,13 @@ interface BlockGroup {
 
 const GROUPS: BlockGroup[] = [
   {
+    label: 'Structure',
+    items: [
+      { type: 'unit', label: 'unit', colorVar: '--node-unit' },
+      { type: 'motif', label: 'motif', colorVar: '--node-motif' },
+    ],
+  },
+  {
     label: 'Control',
     items: [
       { type: 'if', label: 'if', colorVar: '--node-if' },
@@ -152,7 +159,10 @@ function BlockItem({ type, label, colorVar, name, onDragStart, isDragging, onDra
   return (
     <div
       draggable
-      onDragStart={() => {
+      onDragStart={(e) => {
+        e.dataTransfer.setData('application/reactflow', type);
+        e.dataTransfer.setData('application/blockname', name || '');
+        e.dataTransfer.effectAllowed = 'move';
         onDragStart(type, name);
         onDragStateChange?.(id);
       }}

@@ -154,7 +154,7 @@ export function getNodeShellStyle(_type: NodeTypeKey, selected: boolean, color: 
     borderRadius: 'var(--node-radius)',
     padding: '12px',
     minWidth: 140,
-    fontFamily: 'var(--font-mono, monospace)',
+    fontFamily: 'var(--font-mono)',
     position: 'relative' as const,
     overflow: 'hidden',
     boxShadow: selected ? `0 0 0 1px ${color}40, var(--node-shadow)` : 'var(--node-shadow)',

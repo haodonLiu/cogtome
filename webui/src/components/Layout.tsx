@@ -122,8 +122,7 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: 'var(--accent-light)',
   },
   main: {
-    padding: '32px',
-    maxWidth: '1200px',
-    margin: '0 auto',
+    padding: '50px',
+    maxWidth: '100%',
   },
 };

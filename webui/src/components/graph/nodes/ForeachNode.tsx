@@ -11,7 +11,7 @@ interface ForeachNodeData {
 }
 
 export const ForeachNode = memo(({ data, selected }: NodeProps) => {
-  const nodeData = data as ForeachNodeData;
+  const nodeData = (data || {}) as ForeachNodeData;
   const { over = '', maxIterations = 50, expanded = false } = nodeData;
   const config = NODE_TYPE_CONFIGS.foreach;
   const color = config.color;
@@ -25,6 +25,7 @@ export const ForeachNode = memo(({ data, selected }: NodeProps) => {
         position={Position.Left}
         color={color}
         size={10}
+        id="input"
       />
 
       <div style={getNodeHeaderStyle()}>
@@ -54,6 +55,7 @@ export const ForeachNode = memo(({ data, selected }: NodeProps) => {
         position={Position.Right}
         color="#22c55e"
         size={10}
+        id="output"
       />
     </div>
   );

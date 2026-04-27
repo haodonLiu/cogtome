@@ -164,3 +164,48 @@ pub fn list_units(skills: &SkillsDir) -> Result<Vec<UnitInfo>> {
 
     Ok(units)
 }
+
+/// Save a unit to the skills directory.
+pub fn save_unit(skills: &SkillsDir, name: &str, config: &UnitConfig) -> Result<PathBuf> {
+    let units_path = skills.root.join(&skills.units_subdir);
+    let unit_path = units_path.join(name);
+    let bin_path = unit_path.join("bin");
+
+    // Create directory structure
+    std::fs::create_dir_all(&bin_path)?;
+
+    // Create the unit executable
+    let executable_path = bin_path.join(name);
+    let script_content = format!(
+        r#"#!/bin/bash
+# Unit: {}
+# Description: {}
+
+read -r input
+echo "$input"
+"#,
+        name,
+        config.description.as_deref().unwrap_or("")
+    );
+
+    std::fs::write(&executable_path, script_content)?;
+    make_executable(&executable_path)?;
+
+    Ok(unit_path)
+}
+
+fn make_executable(path: &PathBuf) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = std::fs::metadata(path)?.permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(path, perms)?;
+    Ok(())
+}
+
+/// Configuration for a unit.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnitConfig {
+    pub timeout: Option<u32>,
+    pub concurrency: Option<i32>,
+    pub description: Option<String>,
+}

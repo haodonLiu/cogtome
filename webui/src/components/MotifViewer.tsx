@@ -116,7 +116,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 'var(--radius-lg)',
     padding: '24px',
     overflow: 'auto',
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+    fontFamily: "'JetBrains Mono', monospace",
     fontSize: '13px',
     lineHeight: 1.6,
     color: 'var(--text-secondary)',

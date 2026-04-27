@@ -8,7 +8,7 @@ interface ReturnNodeData {
 }
 
 export const ReturnNode = memo(({ data, selected }: NodeProps) => {
-  const nodeData = data as ReturnNodeData;
+  const nodeData = (data || {}) as ReturnNodeData;
   const { mappings = {} } = nodeData;
   const config = NODE_TYPE_CONFIGS.return;
   const color = config.color;
@@ -22,6 +22,7 @@ export const ReturnNode = memo(({ data, selected }: NodeProps) => {
         position={Position.Left}
         color={color}
         size={10}
+        id="input"
       />
 
       <div style={getNodeHeaderStyle()}>

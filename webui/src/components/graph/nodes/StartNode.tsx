@@ -35,6 +35,7 @@ export const StartNode = memo(({ selected }: NodeProps) => {
         position={Position.Right}
         color={color}
         size={10}
+        id="output"
       />
     </div>
   );

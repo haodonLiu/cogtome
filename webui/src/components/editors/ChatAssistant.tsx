@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { Button } from '../ui';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -94,13 +95,13 @@ export function ChatAssistant({ context }: ChatAssistantProps) {
           placeholder={`Ask about ${context?.type || 'this'}...`}
           className="assistant-input"
         />
-        <button
+        <Button
           onClick={handleSend}
           disabled={loading}
-          className="btn-primary assistant-send-btn"
+          variant="primary"
         >
           Send
-        </button>
+        </Button>
       </div>
     </div>
   );

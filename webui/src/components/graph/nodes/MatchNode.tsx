@@ -8,7 +8,7 @@ interface MatchNodeData {
 }
 
 export const MatchNode = memo(({ data, selected }: NodeProps) => {
-  const nodeData = data as MatchNodeData;
+  const nodeData = (data || {}) as MatchNodeData;
   const { condition = '' } = nodeData;
   const config = NODE_TYPE_CONFIGS.match;
   const color = config.color;
@@ -30,6 +30,7 @@ export const MatchNode = memo(({ data, selected }: NodeProps) => {
         position={Position.Left}
         color={color}
         size={10}
+        id="input"
       />
 
       <div style={getNodeHeaderStyle()}>

@@ -22,6 +22,7 @@ export const ForkNode = memo(({ selected }: NodeProps) => {
         position={Position.Left}
         color={color}
         size={10}
+        id="input"
       />
 
       <div style={getNodeHeaderStyle()}>

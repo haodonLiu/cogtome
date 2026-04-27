@@ -4,11 +4,9 @@
 
 # COGTOME
 
-> **Gears turn the tome, mechanics execute the craft.**
+> **Process-level sandbox executor for Agent tools.**
 >
-> COGTOME is a micro operating system and execution runtime for AI Agents.
-> Agents forge gears (Unit), assemble gear trains (Motif), package drive trains (Structure), and compile domain tomes (Complex).
-> The Runtime handles discovery, compilation, scheduling, execution, and reclamation.
+> COGTOME runs your existing scripts and binaries as isolated, contract-governed tools for AI Agents. No rewrites, no framework lock-in.
 
 [![Rust](https://img.shields.io/badge/Rust-1.70%2B-orange.svg)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -18,8 +16,8 @@
 ## Table of Contents
 
 1. [What is COGTOME](#what-is-cogtome)
-2. [Key Highlights](#key-highlights)
-3. [Core Architecture: Four-Layer Model](#core-architecture-four-layer-model)
+2. [Key Features](#key-features)
+3. [Architecture](#architecture)
 4. [Quick Start](#quick-start)
 5. [Project Structure](#project-structure)
 6. [CLI Reference](#cli-reference)
@@ -31,128 +29,92 @@
 
 ## What is COGTOME
 
-COGTOME is **not** a framework, **not** a library — it is an **independent process-level runtime**: a micro operating system for Agents.
+COGTOME is a **runtime that turns any executable into an Agent-callable tool** with process isolation, JSON Schema contracts, and lifecycle management.
 
-| OS Concept | COGTOME Equivalent |
-|-----------|-------------------|
-| Kernel | COGTOME Runtime (Rust) |
-| User Process | Agent (LLM / Program) |
-| System Call | Unit (atomic execution) |
-| User-space Function | Motif (orchestration logic) |
-| Application | Structure (business encapsulation) |
-| App Store | Complex (domain facade) |
-| Shell | `cogtome` CLI |
-| GUI | Web UI (React Flow) |
+### The Problem
 
-### The Core Problem
+Agents need to call external tools, but today the choices are poor:
 
-Agents need to call external tools, but direct `subprocess` calls cause:
-- Process management chaos (leaks, zombie processes)
-- No type safety (no input/output contracts)
-- No versioning or discovery mechanism
-- No execution trace tracking
+- **Direct subprocess**: No isolation. A runaway script can hang or crash your Agent.
+- **MCP**: Great protocol, but you must rewrite tools as MCP Servers. Your existing Python/Bash scripts don't work out of the box.
+- **Workflow engines** (Dify, n8n): Built for humans clicking buttons, not for Agents calling APIs.
 
-COGTOME solves this: Agents write **business logic**, Runtime handles **infrastructure**.
+COGTOME sits between your existing tools and your Agent:
 
-### Brand Metaphors
+```
+Your existing scripts  →  COGTOME Runtime  →  Agent
+(Python, Bash, anything)   (isolation + schema)   (semantic CLI)
+```
 
-| Technical Term | Metaphor | Meaning |
-|---------------|----------|---------|
-| Unit | Cog | The indivisible atomic executor |
-| Motif | Gear Assembly | Orchestration of cogs |
-| Structure | Drive Train | Completes a business goal |
-| Complex | Tome | Domain book holding drive trains |
+### What makes it different
+
+| Capability | How COGTOME handles it |
+|-----------|------------------------|
+| **Existing scripts** | Any executable that reads JSON stdin / writes JSON stdout works. Zero rewrites. |
+| **Isolation** | Every tool runs in a separate `fork+exec` process with a temp sandbox. |
+| **Contracts** | JSON Schema input/output validation at the boundary. |
+| **MCP ecosystem** | Planned bridge to run MCP Servers as first-class Units ([see Roadmap](#roadmap)). |
+| **Orchestration** | Declarative YAML workflows (Motifs) chain tools with `if`, `foreach`, `retry`. |
 
 ---
 
-## Key Highlights
+## Key Features
 
-**🎯 Agent-Native CLI System** — COGTOME is designed **for Agents, by Agents**. Agents interact via pure CLI with semantic commands ("read file", "fetch webpage") rather than raw shell commands ("cat /path", "curl url"). No human-in-the-loop required.
+**🔒 Process Isolation** — Each tool execution is a separate OS process with timeout, temp-dir sandbox, and optional env whitelist. A buggy Unit cannot crash the Runtime or another Unit.
 
-**🧩 Layered Abstraction** — Four-layer model (Unit → Motif → Structure → Complex) provides clear separation between atomic execution and business logic. Agents focus on "what", Runtime handles "how".
+**🛠 Zero-Rewrite Tool Adapter** — Your Python script, Bash one-liner, or compiled binary becomes a Unit by reading JSON from stdin and writing JSON to stdout. No SDK, no protocol adapters.
 
-**🎨 Low-Code Skill Creation** — Web UI with drag-and-drop React Flow editor enables visual composition of Motifs and Structures. Humans can build Skills without writing code, agents consume them via CLI.
+**📐 JSON Schema Contracts** — Define inputs/outputs with JSON Schema. The Runtime validates before execution and type-checks the result.
 
-**🔌 Protocol-Agnostic** — Unlike MCP servers that require protocol adaptation per tool, COGTOME Units are language-agnostic executables. Any program that speaks JSON stdin/stdout works out of the box.
+**🧩 Declarative Workflows** — Chain Units into Motifs with YAML: sequential steps, `if` branches, `foreach` loops, parallel execution, and aggregate results.
 
-**🏗️ Zero Business Logic in Runtime** — The COGTOME binary itself contains no built-in tools. All capabilities come from Skills—true separation of concerns.
+**🎨 Low-Code Skill Creation** — Web UI with drag-and-drop graph editor for visually composing Motifs and assembling Skills. Non-developers can build reusable Skills without writing YAML.
 
----
+**🎯 Semantic CLI** — Agents interact via human-meaningful commands (`read file`, `fetch webpage`) rather than raw shell (`cat /path`, `curl url`).
 
-## Comparison
-
-| Feature | COGTOME | MCP Servers | LangChain | Dify/n8n |
-|---------|---------|-------------|-----------|-----------|
-| **Primary User** | Agent | Agent | Developer | Human |
-| **Interface** | Pure CLI | Protocol | Python API | GUI |
-| **Skill Creation** | CLI + Web UI | Code Required | Code Required | Visual |
-| **For Agents** | ✅ Native | ⚠️ Adapter | ❌ Library | ❌ Human |
-| **Runtime Model** | Process Isolated | Protocol | In-process | Server |
-| **Contracts** | JSON Schema | JSON-RPC | Python Types | Form-based |
+**🌉 MCP Bridge (Planned)** — Run existing MCP Servers inside COGTOME without rewriting them, solving the ecosystem cold-start problem.
 
 ---
 
-## Core Architecture: Four-Layer Model
+## Architecture
+
+COGTOME uses a three-layer execution model:
 
 ```
 Agent (natural language intent)
         │
         ▼
 ┌─────────────────────┐
-│      Complex        │  ← Only layer visible to Agent
-│   (Domain Tome)     │     Has description, auto-discovered
-│                     │
-│  select_structure() │
+│       Skill         │  ← Agent-facing unit. Has name, description, input/output schema.
+│   (Business Unit)   │     Internally a Motif or a direct Unit reference.
 └─────────┬───────────┘
           │
           ▼
 ┌─────────────────────┐
-│     Structure        │  ← Business black box
-│   (Drive Train)      │     manifest.json defines contracts
+│       Motif         │  ← Orchestration logic. YAML declarative flow.
+│    (Workflow)       │     Steps reference Units. Supports foreach, if, retry, on_error.
 └─────────┬───────────┘
-          │
+          │ IPC (fork+exec, stdin/stdout JSON)
           ▼
 ┌─────────────────────┐
-│       Motif          │  ← Orchestration logic (JSON DAG)
-│   (Gear Assembly)    │     start/unit/if/match/foreach/fork/join/return
-└─────────┬───────────┘
-          │
-          ▼
-┌─────────────────────┐
-│        Unit          │  ← Atomic execution
-│       (Cog)          │     stdin/stdout JSON, fork+exec
+│        Unit         │  ← Atomic execution. Independent process.
+│    (Executable)     │     Any language. Reads JSON from stdin, prints JSON to stdout.
 └─────────────────────┘
 ```
 
 ### Layer Overview
 
-| Layer | Name | Agent Visible? | Essence |
-|-------|------|---------------|---------|
-| **L4** | **Complex** | ✅ Only visible | Domain facade with description |
-| **L3** | **Structure** | ❌ Hidden | Business structure |
-| **L2** | **Motif** | ❌ Hidden | Orchestrates Units (JSON DAG) |
-| **L1** | **Unit** | ❌ Hidden | Atomic executor |
-
-### Supported Node Types (v2.0)
-
-| Node | Purpose |
-|------|---------|
-| `start` | Entry point (required, exactly one) |
-| `unit` | Execute atomic Unit |
-| `if` | Conditional branching (true/false) |
-| `match` | Multi-way branching |
-| `foreach` | Loop with optional subgraph |
-| `fork` | Parallel branch split |
-| `join` | Parallel branch sync |
-| `return` | Output values (required, at least one) |
+| Layer | Purpose | Agent Visible? |
+|-------|---------|---------------|
+| **Skill** | Exposed capability with description and schema | ✅ Yes |
+| **Motif** | Orchestrates Units into reusable workflows | ❌ No |
+| **Unit** | Atomic executable | ❌ No |
 
 ### Core Discipline
 
-1. **Units never call each other** (Runtime blocks via `COGTOME_UNIT_MODE=1`)
-2. **Motifs don't directly call each other** (composed via Structure)
-3. **Structure doesn't directly call Unit** (must go through Motif)
-4. **Complex is the only layer with `description`**
-5. **All cross-layer calls go through Runtime IPC**
+1. **Units never call each other** — Runtime blocks recursive invocation via `COGTOME_UNIT_MODE=1`.
+2. **All cross-layer calls go through Runtime IPC** — No direct coupling.
+3. **Schema validation at every boundary** — Fail fast on bad inputs.
 
 ---
 
@@ -169,23 +131,27 @@ cargo build --release
 ### 2. Run Examples
 
 ```bash
-# Discover all Complexes
+# Discover all Skills
 ./target/release/cogtome discover
 
-# Run Complex (complete domain Skill)
+# Run a Skill
 ./target/release/cogtome run text-processing --input '{"text":"hello"}'
 
-# Run Motif (JSON DAG orchestration)
+# Run Motif directly
 ./target/release/cogtome motif run text-transform --input '{"text":"hello"}'
-
-# Run Structure
-./target/release/cogtome structure run text-pipeline --input '{"text":"hello"}'
 
 # Run Unit directly
 ./target/release/cogtome unit run text-uppercase --input '{"text":"hello"}'
 ```
 
-### 3. Environment Variables
+### 3. Wrap your own script (planned)
+
+```bash
+# One-command wrap (coming soon)
+cogtome wrap ./my_script.py --name my-analyzer
+```
+
+### 4. Environment Variables
 
 ```bash
 # Skills directory (default: ./skills)
@@ -204,31 +170,29 @@ cogtome/
 ├── src/                    # Runtime source (Rust)
 │   ├── main.rs             # CLI entry point (clap)
 │   ├── api.rs              # HTTP API server (axum)
-│   ├── discovery.rs         # Directory scanning
+│   ├── discovery.rs        # Directory scanning
 │   ├── config.rs           # Config file loading
-│   ├── context/             # Execution context
+│   ├── context/            # Execution context
 │   │   ├── mod.rs
-│   │   ├── expression.rs    # Expression evaluation
-│   │   └── variables.rs     # Variable resolution
-│   └── engine/              # Execution engine
-│       ├── mod.rs           # GraphMotifEngine (JSON DAG)
-│       ├── graph.rs          # Graph/Node/Edge + validation
-│       ├── motif_manifest.rs # Motif/Structure types
-│       ├── unit_runner.rs    # Unit execution (fork+exec)
-│       └── foreach.rs        # Foreach executor
-├── webui/                   # Web UI (React + React Flow + TypeScript)
+│   │   ├── expression.rs   # Expression evaluation
+│   │   └── variables.rs    # Variable resolution
+│   └── engine/             # Execution engine
+│       ├── mod.rs          # MotifEngine + StructureExecutor
+│       ├── motif_manifest.rs # Manifest types
+│       ├── unit_runner.rs  # Unit execution (fork+exec)
+│       └── foreach.rs      # Foreach executor
+├── webui/                  # Web UI (React + React Flow + TypeScript)
 │   ├── src/
-│   │   ├── components/      # React components
-│   │   │   ├── editors/     # MotifEditor, StructureEditor, UnitEditor
-│   │   │   └── graph/       # 9 node types (start/unit/if/match/...)
-│   │   ├── store/           # Zustand state
-│   │   └── api/             # API client
-│   └── dist/                # Built static assets
-├── skills/                  # Skills directory (runtime-loaded)
-│   ├── units/<name>/bin/    # Atomic executables
-│   ├── motifs/<name>.json    # JSON DAG motifs
-│   ├── structures/<name>/manifest.json
-│   └── <complex>/SKILL.md
+│   │   ├── components/     # React components
+│   │   ├── store/          # Zustand state
+│   │   └── api/            # API client
+│   └── dist/               # Built static assets
+├── skills/                 # Skills directory (runtime-loaded)
+│   ├── units/<name>/bin/   # Atomic executables
+│   ├── motifs/<name>.yaml  # YAML workflow motifs
+│   ├── structures/<name>/  # Business structures (to be merged into Skill)
+│   └── <complex>/          # Complex definitions (to be merged into Skill)
+│       └── SKILL.md
 ├── Cargo.toml
 └── cogtome.toml            # Runtime configuration
 ```
@@ -241,17 +205,15 @@ cogtome/
 
 ```bash
 # Discovery
-cogtome discover                              # Scan all Complexes
+cogtome discover                              # Scan all Skills
 
-# Run (Complex → Structure → Motif → Unit)
-cogtome run <complex> --input <json>          # Run Complex
-cogtome structure run <name> --input <json>   # Run Structure
-cogtome motif run <name> --input <json>       # Run Motif (JSON DAG)
-cogtome unit run <name> --input <json>       # Run Unit
+# Run (Skill → Motif → Unit)
+cogtome run <skill> --input <json>            # Run Skill
+cogtome motif run <name> --input <json>       # Run Motif
+cogtome unit run <name> --input <json>        # Run Unit
 
 # HTTP API Server
-./start-webui.sh                              # One-click: API + WebUI
-cogtome serve --port 3334                     # API only on port 3334
+cogtome serve --port 8080                     # Start REST API
 
 # Pack & Install
 cogtome pack <skill>                          # Package to .cogtome
@@ -267,20 +229,24 @@ cogtome help                                  # Show all commands
 
 ## Web UI
 
-COGTOME includes a **visual graph editor** for Motifs and Structures using React Flow.
+COGTOME includes a **visual Skill studio** for both creating and debugging Motifs.
 
-### Screenshots
+### Skill Creation
 
-| Editor | Description |
-|--------|-------------|
-| **Motif Editor** | Graph canvas with 9 node types |
-| **Structure Editor** | Visual graph editor for assembling Motifs |
-| **Unit Editor** | Test panel for Unit execution |
+- **Graph editor**: Drag-and-drop composition of Motifs with 9 node types (start, unit, if, match, foreach, fork, join, return, motif)
+- **Graph ↔ YAML sync**: Visual editing with automatic YAML serialization
+- **Auto-layout**: Grid-based automatic node positioning
+
+### Execution Debugger
+
+- **Execution trace**: See data flow through each step (which node is stuck, what are the inputs/outputs)
+- **Unit test panel**: Quick-run a single Unit with custom parameters
+- **Live graph view**: Visualize the Motif DAG during or after execution
 
 ### Running the Web UI
 
 ```bash
-# One-click start (builds Rust + API on 3334 + WebUI on 3333)
+# One-click start (builds Rust + API + WebUI)
 ./start-webui.sh
 
 # Or manual
@@ -291,74 +257,75 @@ cd webui && npm install && npm run dev
 
 Access at **http://localhost:3333**
 
-### Features
+---
 
-- **Graph ↔ JSON Sync**: Visual editing with automatic JSON serialization
-- **9 Node Types**: start/unit/if/match/foreach/fork/join/return/motif
-- **Auto-layout**: Grid-based automatic node positioning
-- **Keyboard shortcuts**: Ctrl+S save, Delete remove
-- **Dark theme**: Default dark UI
+## Comparison
+
+| Feature | COGTOME | MCP | LangChain | Dify/n8n |
+|---------|---------|-----|-----------|----------|
+| **Primary goal** | Run existing scripts safely | Protocol standard | Python framework | Human workflow |
+| **Tool rewrite required** | ❌ No | ✅ Yes (MCP Server) | ⚠️ Python wrapper | ⚠️ Usually yes |
+| **Process isolation** | ✅ Yes | Depends on host | ❌ In-process | ✅ Server |
+| **Agent-native interface** | ✅ CLI | Protocol | Python API | GUI/API |
+| **Best for** | Local script sandboxing | Cross-platform tools | Python app integration | Business automation |
 
 ---
 
-## JSON Motif Format (v2.0)
+## Roadmap
 
-Motifs are stored as JSON DAGs:
+### Phase 1: Stabilize (Current)
 
-```json
-{
-  "name": "text-transform",
-  "type": "motif",
-  "version": "2.0",
-  "graph": {
-    "nodes": [
-      { "id": "start", "type": "start", "position": { "x": 0, "y": 0 }, "data": {} },
-      { "id": "upper", "type": "unit", "position": { "x": 200, "y": 0 }, "data": { "unit": "text-uppercase" } },
-      { "id": "return", "type": "return", "position": { "x": 400, "y": 0 }, "data": { "values": { "result": "${steps.upper.output" } } }
-    ],
-    "edges": [
-      { "source": "start", "target": "upper" },
-      { "source": "upper", "target": "return" }
-    ]
-  }
-}
-```
+- [x] CLI framework with discover, run, unit/motif/skill run
+- [x] Unit execution (fork+exec, stdin/stdout JSON, timeout, temp sandbox)
+- [x] YAML Motif parsing and execution
+- [x] Skill discovery (SKILL.md front-matter parsing)
+- [x] `foreach` loops with aggregate
+- [x] `if` conditional execution
+- [x] Retry with backoff
+- [x] Error strategies (fail, continue, fallback)
+- [x] HTTP API server
+- [x] Pack/install with tar.gz
 
-### Validation Rules
+### Phase 2: MCP & Ergonomics (0–6 weeks)
 
-- Exactly one `start` node
-- At least one `return` node
-- No cycles (DAG required)
-- All nodes reachable from start
-- Conditional nodes require labeled edges
+- [ ] **MCP Bridge Unit** — run MCP Servers as COGTOME Units via stdio JSON-RPC
+- [ ] **Skill layer merge** — collapse Structure + Complex into a single Skill concept
+- [ ] **Inline script nodes** — run Python/Bash snippets inside Motifs without standalone Units
+- [ ] **`cogtome wrap`** — one-command migration from existing scripts
+- [ ] **Docker Unit Runner** — optional containerized execution for untrusted tools
 
----
+### Phase 3: Observability & Integration (6–12 weeks)
 
-## Built-in Skills
+- [ ] Execution trace logging (full input/output/history per run)
+- [ ] Checkpoint/resume for long-running Motifs
+- [ ] Prometheus metrics export
+- [ ] KimiCLI bridge (Wire/ACP long-connection mode)
+- [ ] OpenClaw gateway bridge (WebSocket)
 
-| Complex | Structures | Description |
-|---------|-----------|-------------|
-| `core-tools` | `shell-executor`, `file-read`, `file-write` | OpenClaw tool wrappers |
-| `web-fetch` | `fetch` | HTTP content fetching |
-| `text-processing` | `text-pipeline` | Text transformation |
+### Phase 4: Ecosystem
+
+- [ ] File-system auto-reload (notify crate)
+- [ ] Skill registry / marketplace
+- [ ] Web UI execution debugger (trace view)
 
 ---
 
 ## Design Principles
 
-1. **Runtime has zero business logic** — COGTOME binary has no built-in Units
-2. **Agent authoring freedom** — Units any language, Motifs in JSON DAG
-3. **Strong contracts** — JSON Schema validation at each layer
-4. **Process isolation** — Units never call each other
-5. **Observability** — Complete execution chain logging
-6. **Visual + Textual** — Both graph editor and JSON authoring supported
+1. **Don't make users learn metaphors** — Call things what they are: Units, Workflows, Skills.
+2. **Zero-rewrite adoption** — Your existing scripts are valuable. Preserve them.
+3. **Isolation by default** — Every tool runs in its own process. No exceptions.
+4. **Schema contracts** — JSON Schema validation at every boundary.
+5. **MCP compatibility** — We don't compete with MCP; we run it.
+6. **Visual + Textual** — Both graph editor and YAML authoring supported. Debuggability and creation ergonomics are equally important.
 
 ---
 
 ## Links
 
-- [Technical Specification](./development/TECHNICAL_SPEC.md) — Detailed architecture
-- [OS Metaphors](./development/OS_METAPHORS.md) — Conceptual foundation
+- [Technical Specification](./development/TECHNICAL_SPEC.md)
+- [Implementation Guide](./development/IMPLEMENTATION_GUIDE.md)
+- [Skill Authoring Guide](./development/SKILL_AUTHORING_GUIDE.md)
 
 ---
 

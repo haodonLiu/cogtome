@@ -5,9 +5,9 @@ use crate::metrics;
 use crate::services::{
     list_motifs as service_list_motifs, list_structures as service_list_structures,
     list_units as service_list_units, read_structure as service_read_structure,
-    validate_motif_by_name as service_validate_motif,
+    save_unit as service_save_unit, validate_motif_by_name as service_validate_motif,
     validate_structure_by_name as service_validate_structure, write_structure as service_write_structure,
-    MotifInfo, StructureInfo, UnitInfo,
+    MotifInfo, StructureInfo, UnitConfig, UnitInfo,
 };
 use axum::{
     extract::{Path, State},
@@ -544,7 +544,17 @@ async fn put_unit_handler(
     Json(req): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, CogtomeError> {
     validate_name(&name)?;
-    Ok(Json(serde_json::json!({ "message": "Unit saved", "name": name })))
+
+    let config = UnitConfig {
+        timeout: req.get("timeout").and_then(|v| v.as_u64()).map(|v| v as u32),
+        concurrency: req.get("concurrency").and_then(|v| v.as_i64()).map(|v| v as i32),
+        description: req.get("description").and_then(|v| v.as_str()).map(String::from),
+    };
+
+    let path = service_save_unit(&state.skills, &name, &config)
+        .map_err(|e| CogtomeError::layer_runtime().with_hint(format!("{}", e)))?;
+
+    Ok(Json(serde_json::json!({ "message": "Unit saved", "name": name, "path": path })))
 }
 
 // ============================================================================

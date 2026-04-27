@@ -4,11 +4,9 @@
 
 # COGTOME
 
-> **齿轮转动典籍，机械执行技艺。**
+> **面向 Agent 工具的进程级沙箱执行器。**
 >
-> COGTOME 是面向 Agent 的微型操作系统与执行运行时。
-> Agent 铸造齿轮（Unit），组装传动组（Motif），封装传动机构（Structure），收录领域典籍（Complex）。
-> Runtime 负责发现、编译、调度、执行与回收。
+> 将现有脚本和二进制文件作为受隔离、受契约约束的工具提供给 AI Agent。无需重写，无需框架锁定。
 
 [![Rust](https://img.shields.io/badge/Rust-1.70%2B-orange.svg)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -18,8 +16,8 @@
 ## 目录
 
 1. [什么是 COGTOME](#什么是-cogtome)
-2. [核心亮点](#核心亮点)
-3. [核心架构：四层模型](#核心架构四层模型)
+2. [核心特性](#核心特性)
+3. [架构](#架构)
 4. [快速开始](#快速开始)
 5. [项目结构](#项目结构)
 6. [CLI 参考](#cli-参考)
@@ -31,115 +29,92 @@
 
 ## 什么是 COGTOME
 
-COGTOME **不是**框架，**不是**库 — 它是一个**独立的进程级运行时**：Agent 的微型操作系统。
+COGTOME 是一个**运行时，它把任何可执行文件变成 Agent 可调用的工具**，具备进程隔离、JSON Schema 契约和生命周期管理。
 
-| 操作系统概念 | COGTOME 对应 |
-|-----------|------------|
-| 内核 | COGTOME Runtime (Rust) |
-| 用户进程 | Agent (LLM / 程序) |
-| 系统调用 | Unit (原子执行) |
-| 用户态函数 | Motif (编排逻辑) |
-| 应用程序 | Structure (业务封装) |
-| 应用商店 | Complex (领域门面) |
-| Shell | `cogtome` CLI |
-| GUI | Web UI (React Flow) |
+### 解决的问题
 
-### 核心问题
+Agent 需要调用外部工具，但现有方案都有明显缺陷：
 
-Agent 需要调用外部工具，但直接 `subprocess` 会导致：
-- 进程管理混乱（泄漏、僵尸进程）
-- 无类型安全（输入输出无契约）
-- 无版本与发现机制
-- 无执行链路追踪
+- **直接 subprocess**：无隔离。一个失控的脚本可能拖垮整个 Agent。
+- **MCP**：协议很好，但必须把工具重写为 MCP Server。现有的 Python/Bash 脚本无法直接使用。
+- **工作流引擎**（Dify、n8n）：为人类点击按钮设计，不是为 Agent 调用 API 设计的。
 
-COGTOME 解决以上问题：Agent 负责**编写业务逻辑**，Runtime 负责**基础设施**。
+COGTOME 位于你的现有工具和 Agent 之间：
 
-### 品牌隐喻
+```
+你的现有脚本  →  COGTOME 运行时  →  Agent
+(Python、Bash 等)   (隔离 + 契约校验)   (语义化 CLI)
+```
 
-| 技术术语 | 隐喻 | 含义 |
-|---------|------|------|
-| Unit | 齿 (Cog) | 不可再分的原子执行体 |
-| Motif | 齿轮组 | 齿的编排与组合 |
-| Structure | 传动机构 | 完成业务目标的结构 |
-| Complex | 典籍 (Tome) | 收录传动机构的领域之书 |
+### 差异化能力
+
+| 能力 | COGTOME 的处理方式 |
+|-----------|------------------------|
+| **现有脚本兼容** | 任何能从 stdin 读 JSON、向 stdout 写 JSON 的可执行文件都能直接运行。零重写。 |
+| **进程隔离** | 每个工具在独立的 `fork+exec` 进程中运行，带有临时沙箱目录。 |
+| **契约约束** | 在边界处进行 JSON Schema 输入/输出校验。 |
+| **MCP 生态** | 计划通过桥接层将 MCP Server 作为一等 Unit 运行（[见路线图](#路线图)）。 |
+| **编排能力** | 声明式 YAML 工作流（Motif）串联工具，支持 `if`、`foreach`、`retry`。 |
 
 ---
 
-## 核心亮点
+## 核心特性
 
-**🎯 Agent 原生 CLI 系统** — COGTOME **为 Agent 设计，由 Agent 使用**。Agent 通过纯 CLI 进行语义交互（"读取文件"、"抓取网页"），而非原始 shell 命令（"cat /path"、"curl url"）。无需人类介入。
+**🔒 进程隔离** — 每次工具执行都是独立的 OS 进程，具备超时控制、临时目录沙箱和可选的环境变量白名单。有缺陷的 Unit 不会拖垮运行时或其他 Unit。
 
-**🧩 分层抽象** — 四层模型（Unit → Motif → Structure → Complex）清晰分离原子执行与业务逻辑。Agent 专注"做什么"，Runtime 负责"怎么做"。
+**🛠 零重写工具适配** — 你的 Python 脚本、Bash 单行命令或编译后的二进制文件，只要从 stdin 读取 JSON、向 stdout 输出 JSON，就能成为 Unit。无需 SDK，无需协议适配器。
 
-**🎨 低代码 Skill 创建** — Web UI 提供拖拽式 React Flow 编辑器，可视化组合 Motifs 和 Structures。人类无需写代码即可构建 Skills，Agent 通过 CLI 使用。
+**📐 JSON Schema 契约** — 用 JSON Schema 定义输入输出。运行时在执行前校验输入，在返回后校验输出。
 
-**🔌 协议无关** — 不同于 MCP Server 需要为每个工具适配协议，COGTOME Units 是语言无关的可执行文件。任何支持 JSON stdin/stdout 的程序均可即插即用。
+**🧩 声明式工作流** — 用 YAML 将 Unit 串联成 Motif：顺序执行、`if` 分支、`foreach` 循环、并行执行和结果聚合。
 
-**🏗️ Runtime 零业务逻辑** — COGTOME 二进制本身不内置任何工具。所有能力均来自 Skills——真正的关注点分离。
+**🎨 低代码 Skill 创建** — Web UI 提供拖拽式图形编辑器，可视化编排 Motif 和组装 Skill。非开发者也能不写 YAML 就构建可复用 Skill。
 
----
+**🎯 语义化 CLI** — Agent 通过人类可理解的命令（`read file`、`fetch webpage`）交互，而非原始 shell 命令（`cat /path`、`curl url`）。
 
-## 对比
-
-| 特性 | COGTOME | MCP Servers | LangChain | Dify/n8n |
-|--------|---------|-------------|-----------|-----------|
-| **主要用户** | Agent | Agent | 开发者 | 人类 |
-| **交互方式** | 纯 CLI | 协议 | Python API | GUI |
-| **Skill 创建** | CLI + Web UI | 需要写代码 | 需要写代码 | 可视化 |
-| **为 Agent** | ✅ 原生 | ⚠️ 需适配 | ❌ 库 | ❌ 人类 |
-| **运行时模型** | 进程隔离 | 协议 | 进程内 | 服务器 |
-| **契约** | JSON Schema | JSON-RPC | Python 类型 | 表单式 |
+**🌉 MCP 桥接（计划中）** — 无需重写即可在 COGTOME 内运行现有 MCP Server，解决生态冷启动问题。
 
 ---
 
-## 核心架构：四层模型
+## 架构
+
+COGTOME 采用三层执行模型：
 
 ```
 Agent (自然语言意图)
         │
         ▼
 ┌─────────────────────┐
-│      Complex        │  ← Agent 唯一可见的层
-│   (领域典籍 Tome)    │     持有 description，参与自动发现
-│                     │
-│  select_structure() │
+│       Skill         │  ← Agent 可见层。有名称、描述、输入输出 Schema。
+│     (业务单元)       │     内部是一个 Motif 或直接引用 Unit。
 └─────────┬───────────┘
           │
           ▼
 ┌─────────────────────┐
-│     Structure        │  ← 业务黑盒
-│  (传动机构 Drive)    │     manifest.yaml 定义契约
+│       Motif         │  ← 编排逻辑。YAML 声明式流程。
+│      (工作流)        │     步骤引用 Unit。支持 foreach、if、retry、on_error。
 └─────────┬───────────┘
-          │
+          │ IPC (fork+exec, stdin/stdout JSON)
           ▼
 ┌─────────────────────┐
-│       Motif          │  ← 编排逻辑
-│  (齿轮组 Assembly)   │     YAML 声明式 或 Graph
-└─────────┬───────────┘
-          │
-          ▼
-┌─────────────────────┐
-│        Unit          │  ← 原子执行
-│      (齿 Cog)        │     stdin/stdout JSON, fork+exec
+│        Unit         │  ← 原子执行。独立进程。
+│     (可执行文件)      │     任意语言。从 stdin 读取 JSON，向 stdout 输出 JSON。
 └─────────────────────┘
 ```
 
-### 层级总览
+### 层级概览
 
-| 层级 | 名称 | Agent 可见？ | 本质 |
-|------|------|-------------|------|
-| **L4** | **Complex** | ✅ 唯一可见 | 领域门面，有 description |
-| **L3** | **Structure** | ❌ 不可见 | 业务结构 |
-| **L2** | **Motif** | ❌ 不可见 | 编排 Unit |
-| **L1** | **Unit** | ❌ 不可见 | 原子执行体 |
+| 层级 | 作用 | Agent 可见？ |
+|-------|---------|---------------|
+| **Skill** | 对外暴露的能力，含描述和 Schema | ✅ 是 |
+| **Motif** | 将 Unit 编排为可复用工作流 | ❌ 否 |
+| **Unit** | 原子可执行文件 | ❌ 否 |
 
 ### 核心纪律
 
-1. **Unit 之间绝不相互调用**（Runtime 通过 `COGTOME_UNIT_MODE=1` 阻止）
-2. **Motif 之间不直接相互调用**（通过 Structure 组合）
-3. **Structure 不直接调用 Unit**（必须通过 Motif）
-4. **Complex 是唯一有 `description` 的层**
-5. **所有跨层调用通过 Runtime IPC**
+1. **Unit 之间绝不相互调用** — 运行时通过 `COGTOME_UNIT_MODE=1` 阻止递归调用。
+2. **所有跨层调用通过运行时 IPC** — 禁止直接耦合。
+3. **每个边界都有 Schema 校验** — 坏输入尽早失败。
 
 ---
 
@@ -156,23 +131,27 @@ cargo build --release
 ### 2. 运行示例
 
 ```bash
-# 发现所有 Complex
+# 发现所有 Skill
 ./target/release/cogtome discover
 
-# 运行 Complex（完整领域 Skill）
+# 运行 Skill
 ./target/release/cogtome run text-processing --input '{"text":"hello"}'
 
-# 运行 Structure
-./target/release/cogtome structure run text-pipeline --input '{"text":"hello"}'
-
-# 运行 Motif（编排逻辑）
+# 直接运行 Motif
 ./target/release/cogtome motif run text-transform --input '{"text":"hello"}'
 
 # 直接运行 Unit
 ./target/release/cogtome unit run text-uppercase --input '{"text":"hello"}'
 ```
 
-### 3. 环境变量
+### 3. 封装自己的脚本（计划中）
+
+```bash
+# 一键封装（即将推出）
+cogtome wrap ./my_script.py --name my-analyzer
+```
+
+### 4. 环境变量
 
 ```bash
 # Skills 目录（默认：./skills）
@@ -191,34 +170,31 @@ cogtome/
 ├── src/                    # Runtime 源码 (Rust)
 │   ├── main.rs             # CLI 入口 (clap)
 │   ├── api.rs              # HTTP API 服务器 (axum)
-│   ├── discovery.rs          # 目录扫描
-│   ├── context/              # 执行上下文
+│   ├── discovery.rs        # 目录扫描
+│   ├── config.rs           # 配置文件加载
+│   ├── context/            # 执行上下文
 │   │   ├── mod.rs
-│   │   ├── expression.rs    # 表达式求值
-│   │   └── variables.rs     # 变量解析
-│   └── engine/               # 执行引擎
-│       ├── mod.rs            # 主引擎
-│       ├── graph.rs          # Graph 数据结构
-│       ├── motif_manifest.rs # Motif/Structure YAML 解析
-│       ├── unit_runner.rs    # Unit 执行器
-│       └── foreach.rs        # Foreach 执行器
-├── webui/                   # Web UI (React + React Flow)
+│   │   ├── expression.rs   # 表达式求值
+│   │   └── variables.rs    # 变量解析
+│   └── engine/             # 执行引擎
+│       ├── mod.rs          # MotifEngine + StructureExecutor
+│       ├── motif_manifest.rs # 类型定义
+│       ├── unit_runner.rs  # Unit 执行器 (fork+exec)
+│       └── foreach.rs      # Foreach 执行器
+├── webui/                  # Web UI (React + React Flow + TypeScript)
 │   ├── src/
-│   │   ├── components/      # React 组件
-│   │   │   ├── editors/     # YAML 编辑器
-│   │   │   └── graph/       # Graph 节点组件
-│   │   ├── store/           # Zustand 状态
-│   │   └── api/             # API 客户端
-│   └── dist/                # 构建产物
-├── skills/                  # Skills 目录
-│   ├── units/               # 原子执行体
-│   ├── motifs/              # 编排逻辑 (YAML)
-│   ├── structures/           # 业务结构
-│   └── <complex>/           # 领域 Complex
-│       └── SKILL.md         # Complex 定义
-├── test_suite/              # 测试用例
-├── development/              # 技术文档
-└── Cargo.toml
+│   │   ├── components/     # React 组件
+│   │   ├── store/          # Zustand 状态
+│   │   └── api/            # API 客户端
+│   └── dist/               # 构建产物
+├── skills/                 # Skills 目录（运行时加载）
+│   ├── units/<name>/bin/   # 原子可执行文件
+│   ├── motifs/<name>.yaml  # YAML 工作流 Motif
+│   ├── structures/<name>/  # 业务结构（将合并入 Skill）
+│   └── <complex>/          # Complex 定义（将合并入 Skill）
+│       └── SKILL.md
+├── Cargo.toml
+└── cogtome.toml            # 运行时配置
 ```
 
 ---
@@ -229,147 +205,127 @@ cogtome/
 
 ```bash
 # 发现
-cogtome discover                              # 扫描所有 Complex
-cogtome discover --verbose                   # 显示详细信息
+cogtome discover                              # 扫描所有 Skills
 
-# 运行（Complex → Structure → Motif → Unit）
-cogtome run <complex> --input <json>       # 运行 Complex（自动选择第一个 structure）
-cogtome structure run <name> --input <json> # 运行 Structure
-cogtome motif run <name> --input <json>     # 运行 Motif
-cogtome unit run <name> --input <json>      # 直接运行 Unit
-
-# Unit 管理
-cogtome unit list                            # 列出所有 Unit
-cogtome motif list                           # 列出所有 Motif
-cogtome structure list                       # 列出所有 Structure
+# 运行（Skill → Motif → Unit）
+cogtome run <skill> --input <json>            # 运行 Skill
+cogtome motif run <name> --input <json>       # 运行 Motif
+cogtome unit run <name> --input <json>        # 运行 Unit
 
 # HTTP API 服务器
-cogtome serve --port 8080                   # 启动 REST API 服务器
+cogtome serve --port 8080                     # 启动 REST API
 
 # 打包与安装
-cogtome pack <skill>                        # 打包 skill 为 .cogtome
-cogtome install <file.cogtome>            # 安装 skill 包
+cogtome pack <skill>                          # 打包为 .cogtome
+cogtome install <file.cogtome>                # 安装包
 
 # 工具
-cogtome validate                             # 校验所有 skills
-cogtome reload                              # 热重载 skills
-cogtome help                                 # 显示所有命令
+cogtome validate                              # 校验所有 skills
+cogtome reload                                # 热重载 skills
+cogtome help                                  # 显示所有命令
 ```
 
 ---
 
 ## Web UI
 
-COGTOME 包含一个基于 **React Flow** 的**可视化图形编辑器**，用于编辑 Motifs 和 Structures。
+COGTOME 包含一个 **Skill 可视化工作室**，同时支持创作和调试 Motif。
 
-### 截图
+### Skill 创作
 
-| 编辑器 | 说明 |
-|--------|------|
-| **Structure Editor** | 可视化图形编辑器，组装 Motifs |
-| **Motif Editor** | 图形画布，编排执行流程 |
-| **Unit Editor** | Unit 测试面板 |
+- **图形编辑器**：拖拽式编排 Motif，支持 9 种节点类型（start、unit、if、match、foreach、fork、join、return、motif）
+- **Graph ↔ YAML 同步**：可视化编辑，自动序列化为 YAML
+- **自动布局**：基于网格的自动节点定位
+
+### 执行调试器
+
+- **执行链路追踪**：查看每个步骤的数据流（哪个节点卡住、输入输出是什么）
+- **Unit 测试面板**：快速用自定义参数运行单个 Unit
+- **实时图形视图**：在执行期间或执行后可视化 Motif DAG
 
 ### 启动 Web UI
 
 ```bash
-# 开发模式
-cd webui && npm install && npm run dev
-
-# 或使用启动脚本
+# 一键启动（构建 Rust + API + WebUI）
 ./start-webui.sh
 
-# 访问 http://localhost:5173
+# 或手动
+cargo build --release
+cogtome serve --port 3334 &
+cd webui && npm install && npm run dev
 ```
 
-### 功能特性
-
-- **Graph ↔ YAML 同步**：可视化编辑，自动序列化 YAML
-- **自动布局**：Dagre 算法自动定位节点
-- **键盘快捷键**：Ctrl+S 保存，Ctrl+Z 撤销，Delete 删除
-- **AI 助手**：聊天辅助编辑（组件中）
-- **明暗主题**：UI 中切换
+访问 **http://localhost:3333**
 
 ---
 
-## 内置 Skills
+## 对比
 
-| Complex | Structures | 说明 |
-|---------|-----------|------|
-| `core-tools` | `shell-executor`, `file-read`, `file-write` | OpenClaw 工具封装 |
-| `web-fetch` | `fetch` | HTTP 内容获取 |
-| `browser-fetch` | `simple-fetch` | JS 渲染页面获取 (LightPanda) |
-| `text-processing` | `text-pipeline` | 文本转换 |
-
-### 运行内置 Skills
-
-```bash
-# Shell 执行
-cogtome run core-tools --input '{"command": "ls -la"}'
-
-# 文件操作
-cogtome structure run --input '{"path": "/tmp/test.txt", "content": "hello"}' file-write
-
-# 网页抓取
-cogtome run browser-fetch --input '{"url": "https://example.com"}'
-```
+| 特性 | COGTOME | MCP | LangChain | Dify/n8n |
+|---------|---------|-----|-----------|----------|
+| **主要目标** | 安全运行现有脚本 | 协议标准 | Python 框架 | 人类工作流 |
+| **是否需要重写工具** | ❌ 否 | ✅ 是（MCP Server） | ⚠️ Python 包装器 | ⚠️ 通常需要 |
+| **进程隔离** | ✅ 是 | 取决于宿主 | ❌ 进程内 | ✅ 服务端 |
+| **Agent 原生接口** | ✅ CLI | 协议 | Python API | GUI/API |
+| **最适合** | 本地脚本沙箱 | 跨平台工具 | Python 应用集成 | 业务自动化 |
 
 ---
 
 ## 路线图
 
-### Phase 1: 基础 ✅（当前）
+### 第一阶段：稳定（当前）
 
-- [x] CLI 框架
-- [x] Unit 执行（fork+exec, stdin/stdout JSON）
-- [x] YAML Motif 解析（串行流程）
-- [x] Structure → Motif → Unit 链路
-- [x] Complex 发现（SKILL.md 解析）
-- [x] 默认超时（30秒）
-- [x] Skills 路径配置（`COGTOME_SKILLS_DIR`）
-- [x] HTTP API 服务器（`cogtome serve`）
-- [x] Web UI + React Flow
+- [x] CLI 框架：discover、run、unit/motif/skill run
+- [x] Unit 执行：fork+exec、stdin/stdout JSON、超时、临时沙箱
+- [x] YAML Motif 解析与执行
+- [x] Skill 发现（SKILL.md front-matter 解析）
+- [x] `foreach` 循环与聚合
+- [x] `if` 条件执行
+- [x] 重试与退避策略
+- [x] 错误策略（fail、continue、fallback）
+- [x] HTTP API 服务器
+- [x] 打包/安装（tar.gz）
 
-### Phase 2: 核心编排 🔄
+### 第二阶段：MCP 兼容与易用性（0–6 周）
 
-- [x] `foreach` 循环 + `aggregate` 聚合（解析）
-- [ ] 表达式引擎增强
-- [ ] `if` 条件执行（可视化）
-- [ ] `max_iterations` 安全限制
-- [ ] 错误分层（`runtime` / `motif` / `unit`）
-- [ ] 快照语义（只读外部状态）
+- [ ] **MCP Bridge Unit** — 通过 stdio JSON-RPC 将 MCP Server 作为 COGTOME Unit 运行
+- [ ] **Skill 层合并** — 将 Structure + Complex 合并为单一的 Skill 概念
+- [ ] **内联脚本节点** — 在 Motif 中直接运行 Python/Bash 片段，无需独立 Unit
+- [ ] **`cogtome wrap`** — 从现有脚本一键迁移
+- [ ] **Docker Unit Runner** — 为不可信工具提供可选的容器化执行
 
-### Phase 3: 并发 🔮
+### 第三阶段：可观测性与集成（6–12 周）
 
-- [ ] 并行 `foreach`（`parallel: true`）
-- [ ] Unit 并发声明（`max_global`, `resource_key`）
-- [ ] Runtime 资源限制器
+- [ ] 执行链路日志（每次运行的完整输入/输出/历史）
+- [ ] 长时运行 Motif 的 checkpoint/断点续跑
+- [ ] Prometheus 指标导出
+- [ ] KimiCLI 桥接（Wire/ACP 长连接模式）
+- [ ] OpenClaw 网关桥接（WebSocket）
 
-### Phase 4: 生态 🔮
+### 第四阶段：生态
 
-- [x] Python Motif（Unix Socket IPC）
-- [ ] Discovery API（`GET /complexes`）
-- [ ] `auto-complex` 快捷注册
-- [x] `cogtome pack/install`
+- [ ] 文件系统自动重载（notify crate）
+- [ ] Skill 注册中心 / 市场
+- [ ] Web UI 执行调试器（trace 视图）
 
 ---
 
 ## 设计原则
 
-1. **Runtime 零业务逻辑** — COGTOME 二进制不内置任何 Unit
-2. **Agent 创作自由** — Unit 可用任意语言，Motifs 用 YAML/Python/Shell
-3. **强契约** — 每层 JSON Schema 校验
-4. **进程隔离** — Unit 之间绝不相互调用
-5. **可观测性** — 完整执行链路日志
-6. **可视化 + 文本化** — 同时支持图形编辑器和 YAML 编写
+1. **不让用户先学隐喻** — 东西就叫它本身的名字：Unit、Workflow、Skill。
+2. **零重写接入** — 你现有的脚本就是资产。保留它们。
+3. **默认隔离** — 每个工具在独立进程中运行。没有例外。
+4. **Schema 契约** — 每个边界都有 JSON Schema 校验。
+5. **MCP 兼容** — 我们不与 MCP 竞争；我们运行它。
+6. **可视化 + 文本化** — 同时支持图形编辑器和 YAML 编写。可调试性和创作体验同等重要。
 
 ---
 
 ## 相关链接
 
-- [技术规格](./development/TECHNICAL_SPEC.md) — 详细架构
-- [操作系统隐喻](./development/OS_METAPHORS.md) — 概念基础
-- [OpenClaw 集成](./development/OPENCLAW_INTEGRATION.md) — 集成协议
+- [技术规格](./development/TECHNICAL_SPEC.md)
+- [实现指南](./development/IMPLEMENTATION_GUIDE.md)
+- [Skill 编写指南](./development/SKILL_AUTHORING_GUIDE.md)
 
 ---
 

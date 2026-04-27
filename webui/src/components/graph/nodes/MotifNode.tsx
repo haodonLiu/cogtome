@@ -9,7 +9,7 @@ interface MotifNodeData {
 }
 
 export const MotifNode = memo(({ data, selected }: NodeProps) => {
-  const nodeData = data as MotifNodeData;
+  const nodeData = (data || {}) as MotifNodeData;
   const { name = '', expanded = false } = nodeData;
   const config = NODE_TYPE_CONFIGS.motif;
   const color = config.color;
@@ -23,6 +23,7 @@ export const MotifNode = memo(({ data, selected }: NodeProps) => {
         position={Position.Left}
         color={color}
         size={10}
+        id="input"
       />
 
       <div style={getNodeHeaderStyle()}>
@@ -48,6 +49,7 @@ export const MotifNode = memo(({ data, selected }: NodeProps) => {
         position={Position.Right}
         color="#22c55e"
         size={10}
+        id="output"
       />
     </div>
   );
