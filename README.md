@@ -4,9 +4,9 @@
 
 # COGTOME
 
-> **Process-level sandbox executor for Agent tools.**
->
-> COGTOME runs your existing scripts and binaries as isolated, contract-governed tools for AI Agents. No rewrites, no framework lock-in.
+> **Agent's execution layer constraint — reduce hallucinations, improve reliability.**
+
+> COGTOME gives AI Agents a tested, reusable execution playbook. The Agent decides *what* to do; COGTOME ensures the execution follows the correct DAG, handles errors, and maintains state.
 
 [![Rust](https://img.shields.io/badge/Rust-1.70%2B-orange.svg)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -17,44 +17,67 @@
 
 1. [What is COGTOME](#what-is-cogtome)
 2. [Key Features](#key-features)
-3. [Architecture](#architecture)
-4. [Quick Start](#quick-start)
-5. [Project Structure](#project-structure)
-6. [CLI Reference](#cli-reference)
-7. [Web UI](#web-ui)
-8. [Roadmap](#roadmap)
-9. [Design Principles](#design-principles)
+3. [The Self-Improvement Loop](#the-self-improvement-loop)
+4. [Architecture](#architecture)
+5. [Quick Start](#quick-start)
+6. [Project Structure](#project-structure)
+7. [CLI Reference](#cli-reference)
+8. [Web UI](#web-ui)
+9. [Roadmap](#roadmap)
+10. [Design Principles](#design-principles)
 
 ---
 
 ## What is COGTOME
 
-COGTOME is a **runtime that turns any executable into an Agent-callable tool** with process isolation, JSON Schema contracts, and lifecycle management.
+COGTOME is a **runtime that executes declarative workflows as Agent tools** — process isolation, DAG orchestration, state propagation, and observable execution traces.
 
 ### The Problem
 
-Agents need to call external tools, but today the choices are poor:
+Agents know *what* to do but often fail *how* to do it:
+- Tool calls in wrong order
+- Parameters passed incorrectly
+- Errors handled incompletely
+- Multi-step state lost mid-execution
 
-- **Direct subprocess**: No isolation. A runaway script can hang or crash your Agent.
-- **MCP**: Great protocol, but you must rewrite tools as MCP Servers. Your existing Python/Bash scripts don't work out of the box.
-- **Workflow engines** (Dify, n8n): Built for humans clicking buttons, not for Agents calling APIs.
+### The Solution
 
-COGTOME sits between your existing tools and your Agent:
+COGTOME provides a tested execution blueprint (Skill) that the Agent can invoke. The Agent focuses on intent; COGTOME handles execution rigor.
 
 ```
-Your existing scripts  →  COGTOME Runtime  →  Agent
-(Python, Bash, anything)   (isolation + schema)   (semantic CLI)
+Agent intent  →  COGTOME Skill  →  Executed with guarantees
+                 (DAG + contracts)
 ```
 
-### What makes it different
+### Skills Self-Improvement Loop
+
+The key insight: **observable execution reveals Skill deficiencies**.
+
+```
+Execute Skill
+    ↓
+Observe DAG trace (which node failed, inputs/outputs, timing)
+    ↓
+Identify Skill gaps (missing error handling, bad parameter bounds)
+    ↓
+Agent improves the Skill definition
+    ↓
+Re-execute and verify
+```
+
+This creates a feedback loop where Agents not only use tools but learn to build better tools.
+
+---
+
+## What makes it different
 
 | Capability | How COGTOME handles it |
 |-----------|------------------------|
-| **Existing scripts** | Any executable that reads JSON stdin / writes JSON stdout works. Zero rewrites. |
-| **Isolation** | Every tool runs in a separate `fork+exec` process with a temp sandbox. |
-| **Contracts** | JSON Schema input/output validation at the boundary. |
-| **MCP ecosystem** | Planned bridge to run MCP Servers as first-class Units ([see Roadmap](#roadmap)). |
-| **Orchestration** | Declarative YAML workflows (Motifs) chain tools with `if`, `foreach`, `retry`. |
+| **Existing scripts** | Any executable with JSON stdin/stdout. Zero rewrites. |
+| **Execution guarantees** | DAG execution with state propagation and error handling. |
+| **Observable traces** | Full execution history: inputs, outputs, timing, failures. |
+| **Self-improvement** | Failed executions expose Skill weaknesses for Agent to fix. |
+| **MCP ecosystem** | Bridge to run MCP Servers as first-class Units ([see Roadmap](#roadmap)). |
 
 ---
 
@@ -277,7 +300,7 @@ Access at **http://localhost:3333**
 
 - [x] CLI framework with discover, run, unit/motif/skill run
 - [x] Unit execution (fork+exec, stdin/stdout JSON, timeout, temp sandbox)
-- [x] YAML Motif parsing and execution
+- [x] JSON Motif parsing and execution (DAG graph)
 - [x] Skill discovery (SKILL.md front-matter parsing)
 - [x] `foreach` loops with aggregate
 - [x] `if` conditional execution
@@ -285,28 +308,30 @@ Access at **http://localhost:3333**
 - [x] Error strategies (fail, continue, fallback)
 - [x] HTTP API server
 - [x] Pack/install with tar.gz
+- [x] Web UI with visual DAG editor
 
-### Phase 2: MCP & Ergonomics (0–6 weeks)
+### Phase 2: MCP & Ecosystem (0–6 weeks)
 
 - [ ] **MCP Bridge Unit** — run MCP Servers as COGTOME Units via stdio JSON-RPC
-- [ ] **Skill layer merge** — collapse Structure + Complex into a single Skill concept
 - [ ] **Inline script nodes** — run Python/Bash snippets inside Motifs without standalone Units
 - [ ] **`cogtome wrap`** — one-command migration from existing scripts
 - [ ] **Docker Unit Runner** — optional containerized execution for untrusted tools
 
-### Phase 3: Observability & Integration (6–12 weeks)
+### Phase 3: Skills Self-Improvement (6–12 weeks)
 
-- [ ] Execution trace logging (full input/output/history per run)
+- [ ] **Observable execution traces** — full input/output/timing per node per run
+- [ ] **Skill deficiency detection** — failed executions analyzed for actionable fixes
+- [ ] **Agent self-improvement** — Agent modifies Skill based on execution feedback
+- [ ] **Skill versioning** — improved Skills saved as new versions
 - [ ] Checkpoint/resume for long-running Motifs
 - [ ] Prometheus metrics export
+
+### Phase 4: Integration
+
 - [ ] KimiCLI bridge (Wire/ACP long-connection mode)
 - [ ] OpenClaw gateway bridge (WebSocket)
-
-### Phase 4: Ecosystem
-
 - [ ] File-system auto-reload (notify crate)
 - [ ] Skill registry / marketplace
-- [ ] Web UI execution debugger (trace view)
 
 ---
 
