@@ -3,3 +3,4 @@ export { Input } from './Input';
 export { Textarea } from './Textarea';
 export { Badge } from './Badge';
 export { Spinner } from './Spinner';
+export { Card } from './Card';
