@@ -1,5 +1,7 @@
 import { memo } from 'react';
-import { Handle, Position, NodeProps } from '@xyflow/react';
+import { Position, NodeProps } from '@xyflow/react';
+import { NodeHandle } from './NodeHandle';
+import { getNodeShellStyle, getTopBarStyle, getNodeHeaderStyle, getIconBadgeStyle, NODE_TYPE_CONFIGS } from './nodeStyles';
 
 interface MotifNodeData {
   name?: string;
@@ -9,48 +11,31 @@ interface MotifNodeData {
 export const MotifNode = memo(({ data, selected }: NodeProps) => {
   const nodeData = data as MotifNodeData;
   const { name = '', expanded = false } = nodeData;
+  const config = NODE_TYPE_CONFIGS.motif;
+  const color = config.color;
 
   return (
-    <div
-      style={{
-        background: '#2e1a2e',
-        border: selected ? '2px solid #a855f7' : '2px solid #5c3b6e',
-        borderRadius: 8,
-        padding: 12,
-        minWidth: 160,
-        fontFamily: 'monospace',
-      }}
-    >
-      <Handle
+    <div style={getNodeShellStyle('motif', !!selected, color)}>
+      {config.hasTopBar && <div style={getTopBarStyle(color)} />}
+
+      <NodeHandle
         type="target"
         position={Position.Left}
-        style={{ background: '#a855f7', width: 10, height: 10, border: 'none' }}
+        color={color}
+        size={10}
       />
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-        <div
-          style={{
-            width: 20,
-            height: 20,
-            borderRadius: 4,
-            background: '#a855f7',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 10,
-            fontWeight: 700,
-            color: '#fff',
-          }}
-        >
-          M
+      <div style={getNodeHeaderStyle()}>
+        <div style={getIconBadgeStyle(color)}>
+          {config.icon}
         </div>
-        <span style={{ color: '#e2e8f0', fontWeight: 600 }}>{name || 'motif'}</span>
+        <span style={{ color: 'var(--node-text)', fontWeight: 600 }}>{name || 'motif'}</span>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span
           style={{
-            color: expanded ? '#22c55e' : '#64748b',
+            color: expanded ? '#22c55e' : 'var(--node-text-muted)',
             fontSize: 11,
           }}
         >
@@ -58,10 +43,11 @@ export const MotifNode = memo(({ data, selected }: NodeProps) => {
         </span>
       </div>
 
-      <Handle
+      <NodeHandle
         type="source"
         position={Position.Right}
-        style={{ background: '#22c55e', width: 10, height: 10, border: 'none' }}
+        color="#22c55e"
+        size={10}
       />
     </div>
   );

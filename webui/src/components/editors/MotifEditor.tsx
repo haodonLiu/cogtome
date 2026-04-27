@@ -18,12 +18,13 @@ import { autoLayout, jsonToGraph, graphToJson } from '../graph/graphUtils';
 export function MotifEditor() {
   const { name } = useParams<{ name: string }>();
   const navigate = useNavigate();
-    const [motifs, setMotifs] = useState<MotifInfo[]>([]);
+  const [motifs, setMotifs] = useState<MotifInfo[]>([]);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<GraphEdge | null>(null);
   const [viewMode, setViewMode] = useState<'graph' | 'json'>('graph');
   const [nodes, setNodes] = useState<GraphNode[]>([]);
   const [edges, setEdges] = useState<GraphEdge[]>([]);
+  const [collapsePalette, setCollapsePalette] = useState(false);
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
 
@@ -171,47 +172,56 @@ export function MotifEditor() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 16px', background: '#0f0f1a', borderBottom: '1px solid #3b3b5c' }}>
-        <button onClick={() => navigate(-1)} style={buttonStyle}>← Back</button>
-        <h2 style={{ margin: 0, color: '#e2e8f0', fontFamily: 'monospace' }}>Motif: {name}</h2>
-        <div style={{ display: 'flex', gap: 4, flex: 1 }} />
-        <div style={{ display: 'flex', gap: 4 }}>
+    <div className="editor-shell">
+      {/* Toolbar */}
+      <div className="editor-toolbar">
+        <button onClick={() => navigate(-1)} className="btn-secondary">← Back</button>
+        <h2 className="editor-title">Motif: {name}</h2>
+        <div className="editor-toolbar-spacer" />
+        <div className="editor-toolbar-group">
           <button
             onClick={() => setViewMode('graph')}
-            style={{ ...viewButtonStyle, background: viewMode === 'graph' ? '#7c3aed' : '#1a1a2e' }}
+            className={`editor-toolbar-btn ${viewMode === 'graph' ? 'active' : ''}`}
           >
             Graph
           </button>
           <button
             onClick={() => setViewMode('json')}
-            style={{ ...viewButtonStyle, background: viewMode === 'json' ? '#7c3aed' : '#1a1a2e' }}
+            className={`editor-toolbar-btn ${viewMode === 'json' ? 'active' : ''}`}
           >
             JSON
           </button>
         </div>
-        <button onClick={handleSave} style={buttonStyle}>Save</button>
+        <button onClick={handleSave} className="btn-primary">Save</button>
         <button
           onClick={() => {
             const layouted = autoLayout(nodes);
             setNodes(layouted);
           }}
-          style={{ ...buttonStyle, background: '#1a1a2e' }}
+          className="btn-secondary"
         >
           Auto Layout
+        </button>
+        <button
+          onClick={() => setCollapsePalette(p => !p)}
+          className="btn-ghost"
+          title={collapsePalette ? 'Show Palette' : 'Hide Palette'}
+        >
+          {collapsePalette ? '▶' : '◀'}
         </button>
       </div>
 
       {/* Body */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        <BlockPalette
-          motifs={motifs}
-          onDragStart={() => {}}
-        />
+      <div className="editor-body">
+        {!collapsePalette && (
+          <BlockPalette
+            motifs={motifs}
+            onDragStart={() => {}}
+          />
+        )}
 
         {viewMode === 'json' ? (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          <div className="editor-canvas editor-canvas--json">
             <textarea
               value={jsonContent}
               onChange={(e) => {
@@ -222,21 +232,12 @@ export function MotifEditor() {
                   setEdges(parsed.length > 0 && 'edges' in (manifest as any) ? (manifest as any).graph.edges : []);
                 } catch {}
               }}
-              style={{
-                flex: 1,
-                background: '#0f0f1a',
-                color: '#e2e8f0',
-                fontFamily: 'monospace',
-                fontSize: 13,
-                padding: 16,
-                border: 'none',
-                resize: 'none',
-              }}
+              className="editor-textarea"
             />
           </div>
         ) : (
           <div
-            style={{ flex: 1, position: 'relative' }}
+            className="editor-canvas"
             onDragOver={handleDragOver}
             onDrop={handleDrop}
           >
@@ -272,7 +273,7 @@ export function MotifEditor() {
   );
 }
 
-function createNodeData(type: BlockType): GraphNode['data'] {
+const createNodeData = (type: BlockType): GraphNode['data'] => {
   switch (type) {
     case 'unit':
       return { unit: '', inputs: {} };
@@ -295,25 +296,4 @@ function createNodeData(type: BlockType): GraphNode['data'] {
     default:
       return {};
   }
-}
-
-const buttonStyle: React.CSSProperties = {
-  background: '#7c3aed',
-  color: '#fff',
-  border: 'none',
-  padding: '8px 16px',
-  borderRadius: 4,
-  cursor: 'pointer',
-  fontFamily: 'monospace',
-};
-
-const viewButtonStyle: React.CSSProperties = {
-  background: '#1a1a2e',
-  color: '#e2e8f0',
-  border: '1px solid #3b3b5c',
-  padding: '6px 12px',
-  borderRadius: 4,
-  cursor: 'pointer',
-  fontSize: 12,
-  fontFamily: 'monospace',
 };

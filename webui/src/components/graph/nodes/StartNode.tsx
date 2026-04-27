@@ -1,50 +1,40 @@
 import { memo } from 'react';
-import { Handle, Position, NodeProps } from '@xyflow/react';
+import { Position, NodeProps } from '@xyflow/react';
+import { NodeHandle } from './NodeHandle';
+import { getNodeShellStyle, getTopBarStyle, NODE_TYPE_CONFIGS } from './nodeStyles';
 
 export const StartNode = memo(({ selected }: NodeProps) => {
+  const config = NODE_TYPE_CONFIGS.start;
+  const color = config.color;
 
   return (
-    <div
-      style={{
-        background: '#1e1e2e',
-        border: selected ? '2px solid #22c55e' : '2px solid #22c55e80',
-        borderRadius: 20,
-        padding: 12,
-        minWidth: 80,
-        fontFamily: 'monospace',
-        fontSize: 12,
-        textAlign: 'center',
-      }}
-    >
+    <div style={getNodeShellStyle('start', !!selected, color)}>
+      {config.hasTopBar && <div style={getTopBarStyle(color)} />}
+
       <div
         style={{
-          width: 28,
-          height: 28,
+          width: 32,
+          height: 32,
           borderRadius: '50%',
-          background: '#22c55e',
+          background: color,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontSize: 12,
-          fontWeight: 700,
+          margin: '0 auto 6px',
           color: '#000',
-          margin: '0 auto 4px',
         }}
       >
-        ▶
+        {config.icon}
       </div>
-      <span style={{ color: '#22c55e', fontWeight: 600 }}>Start</span>
+      <span style={{ color: 'var(--node-text)', fontWeight: 600, fontSize: 13, display: 'block', textAlign: 'center' }}>
+        {config.label}
+      </span>
 
-      {/* Output handle */}
-      <Handle
+      <NodeHandle
         type="source"
         position={Position.Right}
-        style={{
-          background: '#22c55e',
-          width: 10,
-          height: 10,
-          border: 'none',
-        }}
+        color={color}
+        size={10}
       />
     </div>
   );

@@ -1,3 +1,4 @@
+import { useState, useMemo } from 'react';
 import type { BlockType } from '../../types';
 
 interface PaletteProps {
@@ -5,102 +6,164 @@ interface PaletteProps {
   onDragStart: (type: BlockType, name?: string) => void;
 }
 
+interface BlockGroup {
+  label: string;
+  items: { type: BlockType; label: string; colorVar: string; name?: string }[];
+}
+
+const GROUPS: BlockGroup[] = [
+  {
+    label: 'Control',
+    items: [
+      { type: 'if', label: 'if', colorVar: '--node-if' },
+      { type: 'foreach', label: 'foreach', colorVar: '--node-foreach' },
+      { type: 'match', label: 'match', colorVar: '--node-match' },
+    ],
+  },
+  {
+    label: 'Parallel',
+    items: [
+      { type: 'fork', label: 'fork', colorVar: '--node-fork' },
+      { type: 'join', label: 'join', colorVar: '--node-join' },
+    ],
+  },
+  {
+    label: 'Output',
+    items: [{ type: 'return', label: 'return', colorVar: '--node-return' }],
+  },
+];
+
 export function BlockPalette({ motifs = [], onDragStart }: PaletteProps) {
+  const [search, setSearch] = useState('');
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [draggingType, setDraggingType] = useState<string | null>(null);
+
+  const toggleCollapse = (label: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) {
+        next.delete(label);
+      } else {
+        next.add(label);
+      }
+      return next;
+    });
+  };
+
+  const filteredGroups = useMemo(() => {
+    if (!search.trim()) return GROUPS;
+    const q = search.toLowerCase();
+    return GROUPS.map((g) => ({
+      ...g,
+      items: g.items.filter((i) => i.label.toLowerCase().includes(q)),
+    })).filter((g) => g.items.length > 0);
+  }, [search]);
+
+  const motifGroup = useMemo(() => {
+    if (!search.trim()) {
+      return motifs.map((m) => ({ type: 'motif' as BlockType, label: m.name, colorVar: '--node-motif', name: m.name }));
+    }
+    const q = search.toLowerCase();
+    return motifs
+      .filter((m) => m.name.toLowerCase().includes(q))
+      .map((m) => ({ type: 'motif' as BlockType, label: m.name, colorVar: '--node-motif', name: m.name }));
+  }, [motifs, search]);
+
+  const motifCollapsed = collapsed.has('Motifs');
+
   return (
-    <div style={{
-      width: 220,
-      background: '#0f0f1a',
-      borderRight: '1px solid #3b3b5c',
-      padding: 16,
-      overflowY: 'auto',
-      fontFamily: 'monospace',
-    }}>
-      <div style={{ color: '#64748b', fontSize: 11, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 1 }}>
+    <div className="palette">
+      <div style={{ color: 'var(--text-secondary)', fontSize: 11, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 1 }}>
         Blocks
       </div>
 
-      {/* Control flow */}
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 8, fontWeight: 600 }}>▸ Control</div>
-        <BlockItem type="if" label="if" color="#f59e0b" onDragStart={onDragStart} />
-        <BlockItem type="foreach" label="foreach" color="#06b6d4" onDragStart={onDragStart} />
-        <BlockItem type="match" label="match" color="#ec4899" onDragStart={onDragStart} />
-      </div>
+      <input
+        className="palette-search"
+        type="text"
+        placeholder="Search blocks..."
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
 
-      {/* Parallel */}
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 8, fontWeight: 600 }}>▸ Parallel</div>
-        <BlockItem type="fork" label="fork" color="#8b5cf6" onDragStart={onDragStart} />
-        <BlockItem type="join" label="join" color="#8b5cf6" onDragStart={onDragStart} />
-      </div>
+      {filteredGroups.map((group) => (
+        <div key={group.label} className="palette-group">
+          <button
+            className="palette-group-header"
+            onClick={() => toggleCollapse(group.label)}
+          >
+            <span className={`palette-chevron ${collapsed.has(group.label) ? 'collapsed' : ''}`}>▶</span>
+            <span>{group.label}</span>
+          </button>
+          {!collapsed.has(group.label) && group.items.map((item) => (
+            <BlockItem
+              key={item.type}
+              type={item.type}
+              label={item.label}
+              colorVar={item.colorVar}
+              name={item.name}
+              onDragStart={onDragStart}
+              isDragging={draggingType === item.type}
+              onDragStateChange={setDraggingType}
+            />
+          ))}
+        </div>
+      ))}
 
-      {/* Motifs */}
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 8, fontWeight: 600 }}>▸ Motifs</div>
-        {motifs.map((m) => (
-          <BlockItem
-            key={m.name}
-            type="motif"
-            label={m.name}
-            color="#a855f7"
-            name={m.name}
-            onDragStart={onDragStart}
-          />
-        ))}
-      </div>
-
-      {/* Output */}
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 8, fontWeight: 600 }}>▸ Output</div>
-        <BlockItem type="return" label="return" color="#22c55e" onDragStart={onDragStart} />
-      </div>
+      {motifGroup.length > 0 && (
+        <div className="palette-group">
+          <button
+            className="palette-group-header"
+            onClick={() => toggleCollapse('Motifs')}
+          >
+            <span className={`palette-chevron ${motifCollapsed ? 'collapsed' : ''}`}>▶</span>
+            <span>Motifs</span>
+            <span className="palette-count">{motifGroup.length}</span>
+          </button>
+          {!motifCollapsed && motifGroup.map((item) => (
+            <BlockItem
+              key={item.name || item.type}
+              type={item.type}
+              label={item.label}
+              colorVar={item.colorVar}
+              name={item.name}
+              onDragStart={onDragStart}
+              isDragging={draggingType === item.name}
+              onDragStateChange={setDraggingType}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function BlockItem({ type, label, color, name, onDragStart }: {
+function BlockItem({ type, label, colorVar, name, onDragStart, isDragging, onDragStateChange }: {
   type: BlockType;
   label: string;
-  color: string;
+  colorVar: string;
   name?: string;
   onDragStart: (type: BlockType, name?: string) => void;
+  isDragging?: boolean;
+  onDragStateChange?: (id: string | null) => void;
 }) {
+  const id = name || type;
+  const color = `var(${colorVar})`;
+
   return (
     <div
       draggable
-      onDragStart={() => onDragStart(type, name)}
-      style={{
-        background: '#1a1a2e',
-        border: `1px solid ${color}40`,
-        borderRadius: 4,
-        padding: '6px 8px',
-        marginBottom: 4,
-        cursor: 'grab',
-        color: '#e2e8f0',
-        fontSize: 12,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        transition: 'border-color 0.15s',
+      onDragStart={() => {
+        onDragStart(type, name);
+        onDragStateChange?.(id);
       }}
-      onMouseEnter={(e) => e.currentTarget.style.borderColor = color}
-      onMouseLeave={(e) => e.currentTarget.style.borderColor = `${color}40`}
+      onDragEnd={() => onDragStateChange?.(null)}
+      className={`block-item ${isDragging ? 'dragging' : ''}`}
+      style={{ '--item-color': color } as React.CSSProperties}
     >
-      <div style={{
-        width: 16,
-        height: 16,
-        borderRadius: 3,
-        background: color,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: 9,
-        fontWeight: 700,
-        color: '#000',
-      }}>
+      <div className="block-item-icon">
         {type[0].toUpperCase()}
       </div>
-      {label}
+      <span className="block-item-label">{label}</span>
     </div>
   );
 }

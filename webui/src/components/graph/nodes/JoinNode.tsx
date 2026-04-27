@@ -1,93 +1,57 @@
 import { memo } from 'react';
-import { Handle, Position, NodeProps } from '@xyflow/react';
+import { Position, NodeProps } from '@xyflow/react';
+import { NodeHandle } from './NodeHandle';
+import { getNodeShellStyle, getTopBarStyle, getNodeHeaderStyle, getIconBadgeStyle, NODE_TYPE_CONFIGS } from './nodeStyles';
 
 export const JoinNode = memo(({ selected }: NodeProps) => {
+  const config = NODE_TYPE_CONFIGS.join;
+  const color = config.color;
+
   return (
-    <div
-      style={{
-        background: '#1e1e2e',
-        border: selected ? '3px solid #8b5cf6' : '2px solid #8b5cf680',
-        borderRadius: 8,
-        padding: 12,
-        minWidth: 100,
-        fontFamily: 'monospace',
-        fontSize: 13,
-        borderBottomWidth: 4,
-      }}
-    >
-      {/* Multiple input handles */}
-      <Handle
+    <div style={getNodeShellStyle('join', !!selected, color)}>
+      {config.hasTopBar && <div style={getTopBarStyle(color)} />}
+
+      <NodeHandle
         type="target"
         position={Position.Left}
         id="branch1"
-        style={{
-          background: '#8b5cf6',
-          width: 8,
-          height: 8,
-          border: 'none',
-          top: '25%',
-        }}
+        color={color}
+        size={8}
+        style={{ top: '25%' }}
       />
-      <Handle
+      <NodeHandle
         type="target"
         position={Position.Left}
         id="branch2"
-        style={{
-          background: '#8b5cf6',
-          width: 8,
-          height: 8,
-          border: 'none',
-          top: '50%',
-        }}
+        color={color}
+        size={8}
+        style={{ top: '50%' }}
       />
-      <Handle
+      <NodeHandle
         type="target"
         position={Position.Left}
         id="branch3"
-        style={{
-          background: '#8b5cf6',
-          width: 8,
-          height: 8,
-          border: 'none',
-          top: '75%',
-        }}
+        color={color}
+        size={8}
+        style={{ top: '75%' }}
       />
 
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-        <div
-          style={{
-            width: 20,
-            height: 20,
-            borderRadius: 4,
-            background: '#8b5cf6',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 10,
-            fontWeight: 700,
-            color: '#fff',
-          }}
-        >
-          ⇇
+      <div style={getNodeHeaderStyle()}>
+        <div style={getIconBadgeStyle(color)}>
+          {config.icon}
         </div>
-        <span style={{ color: '#e2e8f0', fontWeight: 600 }}>join</span>
+        <span style={{ color: 'var(--node-text)', fontWeight: 600 }}>join</span>
       </div>
 
-      <div style={{ color: '#64748b', fontSize: 10 }}>
+      <div style={{ color: 'var(--node-text-muted)', fontSize: 10 }}>
         sync branches
       </div>
 
-      {/* Output handle */}
-      <Handle
+      <NodeHandle
         type="source"
         position={Position.Right}
-        style={{
-          background: '#8b5cf6',
-          width: 10,
-          height: 10,
-          border: 'none',
-        }}
+        color={color}
+        size={10}
       />
     </div>
   );

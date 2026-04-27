@@ -1,5 +1,7 @@
 import { memo } from 'react';
-import { Handle, Position, NodeProps } from '@xyflow/react';
+import { Position, NodeProps } from '@xyflow/react';
+import { NodeHandle } from './NodeHandle';
+import { getNodeShellStyle, getTopBarStyle, getNodeHeaderStyle, getIconBadgeStyle, NODE_TYPE_CONFIGS } from './nodeStyles';
 
 interface ForeachNodeData {
   over?: string;
@@ -11,63 +13,47 @@ interface ForeachNodeData {
 export const ForeachNode = memo(({ data, selected }: NodeProps) => {
   const nodeData = data as ForeachNodeData;
   const { over = '', maxIterations = 50, expanded = false } = nodeData;
+  const config = NODE_TYPE_CONFIGS.foreach;
+  const color = config.color;
 
   return (
-    <div
-      style={{
-        background: '#1a1a2e',
-        border: selected ? '2px solid #06b6d4' : '2px solid #3b3b5c',
-        borderRadius: 8,
-        padding: 12,
-        minWidth: 180,
-        fontFamily: 'monospace',
-      }}
-    >
-      <Handle
+    <div style={getNodeShellStyle('foreach', !!selected, color)}>
+      {config.hasTopBar && <div style={getTopBarStyle(color)} />}
+
+      <NodeHandle
         type="target"
         position={Position.Left}
-        style={{ background: '#06b6d4', width: 10, height: 10, border: 'none' }}
+        color={color}
+        size={10}
       />
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <div
-          style={{
-            width: 20,
-            height: 20,
-            borderRadius: 4,
-            background: '#06b6d4',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 10,
-            fontWeight: 700,
-            color: '#000',
-          }}
-        >
-          #
+      <div style={getNodeHeaderStyle()}>
+        <div style={getIconBadgeStyle(color)}>
+          {config.icon}
         </div>
-        <span style={{ color: '#e2e8f0', fontWeight: 600 }}>foreach</span>
+        <span style={{ color: 'var(--node-text)', fontWeight: 600 }}>foreach</span>
       </div>
 
-      <div style={{ background: '#0f0f1a', borderRadius: 4, padding: 8, marginBottom: 4 }}>
-        <div style={{ color: '#64748b', fontSize: 10, marginBottom: 4 }}>over</div>
-        <div style={{ color: '#67e8f9', fontSize: 12 }}>{over || '(none)'}</div>
+      <div style={{ background: 'var(--node-bg-subtle)', borderRadius: 4, padding: 8, marginBottom: 4, marginTop: 4 }}>
+        <div style={{ color: 'var(--node-text-muted)', fontSize: 10, marginBottom: 4 }}>over</div>
+        <div style={{ color, fontSize: 12 }}>{over || '(none)'}</div>
       </div>
 
-      <div style={{ color: '#64748b', fontSize: 11 }}>
+      <div style={{ color: 'var(--node-text-muted)', fontSize: 11 }}>
         max: {maxIterations}
       </div>
 
       {expanded && (
-        <div style={{ color: '#64748b', fontSize: 11, fontStyle: 'italic', marginTop: 4 }}>
+        <div style={{ color: 'var(--node-text-muted)', fontSize: 11, fontStyle: 'italic', marginTop: 4 }}>
           (body: {nodeData.body?.length || 0} nodes)
         </div>
       )}
 
-      <Handle
+      <NodeHandle
         type="source"
         position={Position.Right}
-        style={{ background: '#22c55e', width: 10, height: 10, border: 'none' }}
+        color="#22c55e"
+        size={10}
       />
     </div>
   );

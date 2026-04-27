@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getUnit, saveUnit } from '../../api/client';
 import { ChatAssistant } from './ChatAssistant';
@@ -228,32 +228,32 @@ export function UnitEditor() {
   };
 
   return (
-    <div style={styles.container}>
+    <div className="editor-shell">
       {/* Template Selection Modal */}
       {showTemplateModal && (
-        <div style={styles.modalOverlay} onClick={() => setShowTemplateModal(false)}>
-          <div style={styles.modal} onClick={e => e.stopPropagation()}>
-            <div style={styles.modalHeader}>
-              <h3 style={styles.modalTitle}>Select Template</h3>
-              <button onClick={() => setShowTemplateModal(false)} style={styles.closeButton}>×</button>
+        <div className="modal-overlay" onClick={() => setShowTemplateModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Select Template</h3>
+              <button onClick={() => setShowTemplateModal(false)} className="modal-close">×</button>
             </div>
-            <div style={styles.templateGrid}>
+            <div className="template-grid">
               {allTemplates.map((template) => (
                 <button
                   key={template.id}
                   onClick={() => handleApplyTemplate(template)}
-                  style={styles.templateCard}
+                  className="template-card"
                 >
-                  <span style={styles.templateIcon}>{template.icon}</span>
-                  <span style={styles.templateName}>{template.name}</span>
-                  <span style={styles.templateDesc}>{template.description}</span>
+                  <span className="template-icon">{template.icon}</span>
+                  <span className="template-name">{template.name}</span>
+                  <span className="template-desc">{template.description}</span>
                   {template.category === 'custom' && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         handleDeleteTemplate(template.id);
                       }}
-                      style={styles.deleteTemplateBtn}
+                      className="delete-template-btn"
                     >
                       Delete
                     </button>
@@ -261,87 +261,82 @@ export function UnitEditor() {
                 </button>
               ))}
             </div>
-            <div style={styles.modalFooter}>
-              <button onClick={() => setShowTemplateModal(false)} style={styles.cancelBtn}>
-                Cancel
-              </button>
+            <div className="modal-footer">
+              <button onClick={() => setShowTemplateModal(false)} className="btn-secondary">Cancel</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Header */}
-      <div style={styles.header}>
-        <button onClick={() => navigate('/units')} style={buttonStyle}>← Back</button>
-        <h2 style={styles.title}>Unit: {name}</h2>
-        <button onClick={() => setShowTemplateModal(true)} style={templateButtonStyle}>
-          Templates
-        </button>
-        <button onClick={() => handleSaveTemplate({})} style={templateButtonStyle}>
-          Save as Template
-        </button>
-        <button onClick={handleSave} disabled={saving} style={buttonStyle}>
+      {/* Toolbar */}
+      <div className="editor-toolbar">
+        <button onClick={() => navigate('/units')} className="btn-secondary">← Back</button>
+        <h2 className="editor-title">Unit: {name}</h2>
+        <div className="editor-toolbar-spacer" />
+        <button onClick={() => setShowTemplateModal(true)} className="btn-secondary">Templates</button>
+        <button onClick={() => handleSaveTemplate({})} className="btn-secondary">Save Template</button>
+        <button onClick={handleSave} disabled={saving} className="btn-primary">
           {saving ? 'Saving...' : 'Save'}
         </button>
       </div>
 
       {/* Main content */}
-      <div style={styles.main}>
+      <div className="editor-body">
         {/* Config panel */}
-        <div style={styles.leftPanel}>
-          <div style={cardStyle}>
-            <h3 style={styles.sectionTitle}>Configuration</h3>
-            <label style={labelStyle}>Name</label>
-            <input value={name || ''} disabled style={inputStyle} />
+        <div className="editor-panel editor-panel--left">
+          <div className="card">
+            <h3 className="section-title">Configuration</h3>
+            <label className="label">Name</label>
+            <input value={name || ''} disabled className="input" />
 
-            <label style={labelStyle}>Command</label>
+            <label className="label">Command</label>
             <input
               value={config.command}
               onChange={(e) => setConfig({ ...config, command: e.target.value })}
-              style={inputStyle}
+              className="input"
               placeholder="e.g., curl, jq, cat"
             />
 
-            <label style={labelStyle}>Args (one per line)</label>
+            <label className="label">Args (one per line)</label>
             <textarea
               value={config.args.join('\n')}
               onChange={(e) => setConfig({ ...config, args: e.target.value.split('\n').filter(Boolean) })}
-              style={{ ...inputStyle, height: 80, fontFamily: 'monospace' }}
+              className="input textarea"
               placeholder="--flag&#10;${variable}"
             />
 
-            <label style={labelStyle}>Timeout (seconds)</label>
-            <div style={sliderContainer}>
+            <label className="label">Timeout (seconds)</label>
+            <div className="slider-container">
               <input
                 type="range"
                 min={1}
                 max={300}
                 value={config.timeout}
                 onChange={(e) => setConfig({ ...config, timeout: Number(e.target.value) })}
-                style={sliderStyle}
+                className="slider"
               />
-              <span style={sliderValue}>{config.timeout}s</span>
+              <span className="slider-value">{config.timeout}s</span>
             </div>
 
-            <label style={labelStyle}>Concurrency</label>
+            <label className="label">Concurrency</label>
             <input
               type="number"
               min={1}
               max={100}
               value={config.concurrency}
               onChange={(e) => setConfig({ ...config, concurrency: Number(e.target.value) })}
-              style={inputStyle}
+              className="input"
             />
 
-            <label style={labelStyle}>Description</label>
+            <label className="label">Description</label>
             <textarea
               value={config.description}
               onChange={(e) => setConfig({ ...config, description: e.target.value })}
-              style={{ ...inputStyle, height: 80 }}
+              className="input textarea"
             />
 
             {selectedTemplate && (
-              <div style={styles.templateBadge}>
+              <div className="template-badge">
                 Using: {selectedTemplate.icon} {selectedTemplate.name}
               </div>
             )}
@@ -349,35 +344,29 @@ export function UnitEditor() {
         </div>
 
         {/* Test panel */}
-        <div style={styles.rightPanel}>
-          <div style={cardStyle}>
-            <h3 style={styles.sectionTitle}>Test</h3>
-            <label style={labelStyle}>Input JSON</label>
+        <div className="editor-panel editor-panel--right">
+          <div className="card">
+            <h3 className="section-title">Test</h3>
+            <label className="label">Input JSON</label>
             <textarea
               value={testInput}
               onChange={(e) => setTestInput(e.target.value)}
-              style={{ ...inputStyle, height: 120, fontFamily: 'monospace' }}
+              className="input textarea"
             />
-            <button onClick={handleTest} style={{ ...buttonStyle, marginTop: 8 }}>
+            <button onClick={handleTest} className="btn-primary btn-run">
               ▶ Run Test
             </button>
           </div>
 
-          <div style={cardStyle}>
-            <h3 style={styles.sectionTitle}>Output</h3>
+          <div className="card">
+            <h3 className="section-title">Output</h3>
             {testStatus && (
-              <div style={{
-                ...statusStyle,
-                background: testStatus === 'success' ? '#22c55e20' : '#ef444420',
-                color: testStatus === 'success' ? '#22c55e' : '#ef4444',
-              }}>
+              <div className={`status-badge status-badge--${testStatus}`}>
                 {testStatus === 'success' ? '✓ Success' : '✗ Error'}
               </div>
             )}
             {testOutput && (
-              <pre style={outputStyle}>
-                {testOutput}
-              </pre>
+              <pre className="output">{testOutput}</pre>
             )}
           </div>
         </div>
@@ -387,224 +376,3 @@ export function UnitEditor() {
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column',
-    height: '100vh',
-    padding: 24,
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 24,
-  },
-  title: {
-    margin: 0,
-    flex: 1,
-    fontSize: 20,
-    fontWeight: 600,
-  },
-  main: {
-    display: 'flex',
-    flex: 1,
-    gap: 24,
-    overflow: 'hidden',
-  },
-  leftPanel: {
-    flex: 1,
-    overflowY: 'auto',
-  },
-  rightPanel: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 16,
-    overflowY: 'auto',
-  },
-  sectionTitle: {
-    marginTop: 0,
-    marginBottom: 16,
-    fontSize: 16,
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-  },
-  templateBadge: {
-    marginTop: 16,
-    padding: '8px 12px',
-    background: 'var(--accent-light)',
-    color: 'var(--accent)',
-    borderRadius: 6,
-    fontSize: 13,
-  },
-  modalOverlay: {
-    position: 'fixed',
-    inset: 0,
-    background: 'rgba(0,0,0,0.7)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-  },
-  modal: {
-    background: 'var(--bg-card)',
-    borderRadius: 12,
-    padding: 24,
-    maxWidth: 600,
-    maxHeight: '80vh',
-    overflow: 'auto',
-    border: '1px solid var(--border)',
-  },
-  modalHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  modalTitle: {
-    margin: 0,
-    fontSize: 18,
-    fontWeight: 600,
-  },
-  closeButton: {
-    background: 'none',
-    border: 'none',
-    color: 'var(--text-secondary)',
-    fontSize: 24,
-    cursor: 'pointer',
-  },
-  templateGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: 12,
-    marginBottom: 20,
-  },
-  templateCard: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'flex-start',
-    padding: 16,
-    background: 'var(--bg-page)',
-    border: '1px solid var(--border)',
-    borderRadius: 8,
-    cursor: 'pointer',
-    textAlign: 'left',
-    transition: 'var(--transition)',
-    position: 'relative',
-  },
-  templateIcon: {
-    fontSize: 24,
-    marginBottom: 8,
-  },
-  templateName: {
-    fontWeight: 600,
-    fontSize: 14,
-    marginBottom: 4,
-  },
-  templateDesc: {
-    fontSize: 12,
-    color: 'var(--text-secondary)',
-  },
-  deleteTemplateBtn: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    background: 'none',
-    border: 'none',
-    color: '#ef4444',
-    fontSize: 12,
-    cursor: 'pointer',
-    opacity: 0.7,
-  },
-  modalFooter: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-  },
-};
-
-const cardStyle: React.CSSProperties = {
-  background: 'var(--bg-card)',
-  border: '1px solid var(--border)',
-  borderRadius: 8,
-  padding: 16,
-};
-
-const buttonStyle: React.CSSProperties = {
-  background: 'var(--accent)',
-  color: '#fff',
-  border: 'none',
-  padding: '8px 16px',
-  borderRadius: 6,
-  cursor: 'pointer',
-  fontSize: 14,
-  fontWeight: 500,
-};
-
-const templateButtonStyle: React.CSSProperties = {
-  background: 'var(--bg-page)',
-  color: 'var(--text-primary)',
-  border: '1px solid var(--border)',
-  padding: '8px 16px',
-  borderRadius: 6,
-  cursor: 'pointer',
-  fontSize: 14,
-  fontWeight: 500,
-};
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  background: 'var(--bg-page)',
-  border: '1px solid var(--border)',
-  borderRadius: 6,
-  padding: '8px 12px',
-  color: 'var(--text-primary)',
-  marginBottom: 12,
-  fontSize: 14,
-  boxSizing: 'border-box',
-};
-
-const labelStyle: React.CSSProperties = {
-  display: 'block',
-  color: 'var(--text-secondary)',
-  fontSize: 13,
-  marginBottom: 6,
-  marginTop: 8,
-  fontWeight: 500,
-};
-
-const sliderContainer: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 12,
-};
-
-const sliderStyle: React.CSSProperties = {
-  flex: 1,
-};
-
-const sliderValue: React.CSSProperties = {
-  fontFamily: 'monospace',
-  fontSize: 14,
-  color: 'var(--text-primary)',
-  minWidth: 40,
-};
-
-const statusStyle: React.CSSProperties = {
-  padding: '4px 8px',
-  borderRadius: 4,
-  marginBottom: 8,
-  fontSize: 13,
-  fontWeight: 500,
-};
-
-const outputStyle: React.CSSProperties = {
-  background: 'var(--bg-page)',
-  padding: 12,
-  borderRadius: 6,
-  overflow: 'auto',
-  fontSize: 12,
-  fontFamily: 'monospace',
-  maxHeight: 300,
-};

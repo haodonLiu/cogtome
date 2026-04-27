@@ -22,6 +22,7 @@ export function StructureEditor() {
   const [motifs, setMotifs] = useState<MotifInfo[]>([]);
   const [selectedNode, setSelectedNode] = useState<BlockNode | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<BlockEdge | null>(null);
+  const [collapsePalette, setCollapsePalette] = useState(false);
   const [nodes, setNodes, onNodesChange] = useNodesState<BlockNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<BlockEdge>([]);
 
@@ -139,33 +140,42 @@ export function StructureEditor() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 16px', background: '#0f0f1a', borderBottom: '1px solid #3b3b5c' }}>
-        <button onClick={() => navigate(-1)} style={buttonStyle}>← Back</button>
-        <h2 style={{ margin: 0, color: '#e2e8f0', fontFamily: 'monospace' }}>Structure: {name}</h2>
-        <div style={{ display: 'flex', gap: 4, flex: 1, justifyContent: 'flex-end' }} />
-        <button onClick={handleSave} style={buttonStyle}>Save</button>
+    <div className="editor-shell">
+      {/* Toolbar */}
+      <div className="editor-toolbar">
+        <button onClick={() => navigate(-1)} className="btn-secondary">← Back</button>
+        <h2 className="editor-title">Structure: {name}</h2>
+        <div className="editor-toolbar-spacer" />
+        <button onClick={handleSave} className="btn-primary">Save</button>
         <button
           onClick={() => {
             const layouted = autoLayout(nodes as BlockNode[]);
             setNodes(layouted.map(toRFNode) as any);
           }}
-          style={{ ...buttonStyle, background: '#1a1a2e' }}
+          className="btn-secondary"
         >
           Auto Layout
+        </button>
+        <button
+          onClick={() => setCollapsePalette(p => !p)}
+          className="btn-ghost"
+          title={collapsePalette ? 'Show Palette' : 'Hide Palette'}
+        >
+          {collapsePalette ? '▶' : '◀'}
         </button>
       </div>
 
       {/* Body */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        <BlockPalette
-          motifs={motifs}
-          onDragStart={() => {}}
-        />
+      <div className="editor-body">
+        {!collapsePalette && (
+          <BlockPalette
+            motifs={motifs}
+            onDragStart={() => {}}
+          />
+        )}
 
         <div
-          style={{ flex: 1, position: 'relative' }}
+          className="editor-canvas"
           onDragOver={handleDragOver}
           onDrop={handleDrop}
         >
@@ -200,7 +210,7 @@ export function StructureEditor() {
   );
 }
 
-function createNodeData(type: BlockType, name?: string): BlockNode['data'] {
+const createNodeData = (type: BlockType, name?: string): BlockNode['data'] => {
   switch (type) {
     case 'unit':
       return { name: name || '', inputs: { input: '' }, outputs: [{ id: 'out-1', name: 'output', type: 'string' }] };
@@ -217,7 +227,7 @@ function createNodeData(type: BlockType, name?: string): BlockNode['data'] {
   }
 }
 
-function toRFNode(node: BlockNode) {
+const toRFNode = (node: BlockNode) => {
   return { id: node.id, type: node.type, position: node.position, data: node.data };
 }
 
@@ -278,12 +288,3 @@ function graphToStructureManifest(nodes: BlockNode[], _edges: BlockEdge[], name:
   };
 }
 
-const buttonStyle: React.CSSProperties = {
-  background: '#7c3aed',
-  color: '#fff',
-  border: 'none',
-  padding: '8px 16px',
-  borderRadius: 4,
-  cursor: 'pointer',
-  fontFamily: 'monospace',
-};

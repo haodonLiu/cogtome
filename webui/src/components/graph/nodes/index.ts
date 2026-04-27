@@ -7,6 +7,8 @@ export { ForkNode } from './ForkNode';
 export { JoinNode } from './JoinNode';
 export { ReturnNode } from './ReturnNode';
 export { MotifNode } from './MotifNode';
+export { NodeHandle } from './NodeHandle';
+export { NODE_TYPE_CONFIGS, getNodeShellStyle, getTopBarStyle, getNodeHeaderStyle, getIconBadgeStyle } from './nodeStyles';
 
 import { UnitNode } from './UnitNode';
 import { StartNode } from './StartNode';
