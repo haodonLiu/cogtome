@@ -81,9 +81,9 @@ export function Button({
       }}
       onMouseLeave={(e) => {
         if (!disabled) {
-          e.currentTarget.style.background = variantStyles[variant].background || '';
-          e.currentTarget.style.borderColor = variantStyles[variant].border || '';
-          e.currentTarget.style.color = variantStyles[variant].color || '';
+          e.currentTarget.style.background = String(variantStyles[variant].background || '');
+          e.currentTarget.style.borderColor = String(variantStyles[variant].border || '');
+          e.currentTarget.style.color = String(variantStyles[variant].color || '');
           if (variant === 'ghost') {
             e.currentTarget.style.color = 'var(--text-secondary)';
           }

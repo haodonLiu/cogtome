@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useStructureStore } from '../store/structureStore';
+import { Card, Spinner, EmptyState, ErrorBanner, Button } from './ui';
 
 export function StructureList() {
   const { structures, isLoadingLists, listError, loadStructures, createNewStructure, deleteStructure } =
@@ -31,28 +32,23 @@ export function StructureList() {
           <h2 style={styles.title}>Structures</h2>
           <p style={styles.subtitle}>Build and manage execution pipelines</p>
         </div>
-        <button style={styles.newBtn} onClick={handleNew}>
+        <Button onClick={handleNew}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
           New Structure
-        </button>
+        </Button>
       </div>
 
       {/* Error */}
       {listError && (
-        <div style={styles.errorBanner}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round">
-            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-          </svg>
-          {listError}
-        </div>
+        <ErrorBanner message={listError} />
       )}
 
       {/* Loading */}
       {isLoadingLists && (
         <div style={styles.loading}>
-          <div style={styles.spinner} />
+          <Spinner />
           <span>Loading structures...</span>
         </div>
       )}
@@ -61,7 +57,7 @@ export function StructureList() {
       {!isLoadingLists && !listError && (
         <div style={styles.grid}>
           {structures.map((s) => (
-            <Link key={s.name} to={`/structures/${encodeURIComponent(s.name)}`} className="structure-card" style={styles.card}>
+            <Card key={s.name} hoverable onClick={() => navigate(`/structures/${encodeURIComponent(s.name)}`)} style={styles.cardContent}>
               <div style={styles.cardTop}>
                 <div style={styles.cardIcon}>
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -86,22 +82,15 @@ export function StructureList() {
                   <polyline points="9 18 15 12 9 6"/>
                 </svg>
               </div>
-            </Link>
+            </Card>
           ))}
 
           {structures.length === 0 && (
-            <div style={styles.empty}>
-              <div style={styles.emptyIcon}>
-                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/>
-                </svg>
-              </div>
-              <p style={styles.emptyTitle}>No structures yet</p>
-              <p style={styles.emptyText}>Create your first structure to start building pipelines</p>
-              <button style={styles.emptyBtn} onClick={handleNew}>
-                Create Structure
-              </button>
-            </div>
+            <EmptyState
+              title="No structures yet"
+              description="Create your first structure to start building pipelines"
+              action={<Button onClick={handleNew}>Create Structure</Button>}
+            />
           )}
         </div>
       )}
@@ -128,34 +117,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '14px',
     color: 'var(--text-tertiary)',
   },
-  newBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    backgroundColor: 'var(--accent)',
-    color: '#fff',
-    border: 'none',
-    padding: '10px 20px',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: 600,
-    fontFamily: 'inherit',
-    transition: 'var(--transition)',
-    boxShadow: 'var(--shadow-sm)',
-  },
-  errorBanner: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    backgroundColor: 'var(--danger-bg)',
-    color: 'var(--danger)',
-    padding: '12px 16px',
-    borderRadius: 'var(--radius-md)',
-    fontSize: '14px',
-    marginBottom: '20px',
-    border: '1px solid #fecaca',
-  },
   loading: {
     display: 'flex',
     alignItems: 'center',
@@ -164,28 +125,13 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '40px 0',
     fontSize: '14px',
   },
-  spinner: {
-    width: '18px',
-    height: '18px',
-    border: '2px solid var(--border)',
-    borderTopColor: 'var(--accent)',
-    borderRadius: '50%',
-    animation: 'spin 0.8s linear infinite',
-  },
   grid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
     gap: '16px',
   },
-  card: {
-    backgroundColor: 'var(--bg-card)',
+  cardContent: {
     padding: '24px',
-    borderRadius: 'var(--radius-lg)',
-    textDecoration: 'none',
-    color: 'inherit',
-    border: '1px solid var(--border)',
-    transition: 'var(--transition)',
-    boxShadow: 'var(--shadow-sm)',
     position: 'relative',
     overflow: 'hidden',
   },
@@ -233,40 +179,6 @@ const styles: Record<string, React.CSSProperties> = {
     right: '20px',
     bottom: '20px',
     color: 'var(--text-tertiary)',
-    transition: 'var(--transition)',
-  },
-  empty: {
-    gridColumn: '1 / -1',
-    textAlign: 'center',
-    padding: '64px 24px',
-    backgroundColor: 'var(--bg-card)',
-    borderRadius: 'var(--radius-lg)',
-    border: '1px dashed var(--border)',
-  },
-  emptyIcon: {
-    marginBottom: '16px',
-  },
-  emptyTitle: {
-    margin: '0 0 4px 0',
-    fontSize: '16px',
-    fontWeight: 600,
-    color: 'var(--text-secondary)',
-  },
-  emptyText: {
-    margin: '0 0 20px 0',
-    fontSize: '14px',
-    color: 'var(--text-tertiary)',
-  },
-  emptyBtn: {
-    backgroundColor: 'var(--accent)',
-    color: '#fff',
-    border: 'none',
-    padding: '10px 24px',
-    borderRadius: 'var(--radius-md)',
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: 600,
-    fontFamily: 'inherit',
     transition: 'var(--transition)',
   },
 };
