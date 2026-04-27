@@ -1,4 +1,4 @@
-import type { StructureInfo, MotifInfo, UnitInfo, StructureManifest, ValidationResult } from '../types';
+import type { StructureInfo, MotifInfo, UnitInfo, StructureManifest, ValidationResult, MotifManifestV2 } from '../types';
 
 const API_BASE = '/api';
 
@@ -34,27 +34,31 @@ export async function deleteStructure(name: string): Promise<{ message: string; 
   });
 }
 
-// Motifs API (read-only)
+// Motifs API (v2 JSON)
 export async function listMotifs(): Promise<MotifInfo[]> {
   return fetchJson<MotifInfo[]>(`${API_BASE}/motifs`);
 }
 
-export async function getMotif(name: string): Promise<string> {
+export async function getMotif(name: string): Promise<MotifManifestV2> {
   const response = await fetch(`${API_BASE}/motifs/${encodeURIComponent(name)}`);
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`);
   }
-  return response.text();
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Fallback for legacy YAML motifs
+    return { name, type: 'motif', graph: { nodes: [], edges: [] } };
+  }
 }
 
-export async function saveMotif(name: string, yaml: string): Promise<{ message: string }> {
-  const response = await fetch(`${API_BASE}/motifs/${encodeURIComponent(name)}`, {
+export async function saveMotif(name: string, manifest: MotifManifestV2): Promise<{ message: string; path: string }> {
+  return fetchJson<{ message: string; path: string }>(`${API_BASE}/motifs/${encodeURIComponent(name)}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'text/plain' },
-    body: yaml,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(manifest),
   });
-  if (!response.ok) throw new Error('Failed to save motif');
-  return { message: 'Motif saved' };
 }
 
 // Units API

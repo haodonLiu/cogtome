@@ -1,8 +1,15 @@
-import React, { memo } from 'react';
+import { memo } from 'react';
 import { Handle, Position, NodeProps } from '@xyflow/react';
 
+interface UnitNodeData {
+  name?: string;
+  inputs?: Record<string, string>;
+  outputs?: Array<{ id: string; name: string; type: string }>;
+}
+
 export const UnitNode = memo(({ data, selected }: NodeProps) => {
-  const { name, inputs = {}, outputs = [] } = data;
+  const nodeData = data as UnitNodeData;
+  const { name, inputs = {}, outputs = [] } = nodeData;
 
   return (
     <div

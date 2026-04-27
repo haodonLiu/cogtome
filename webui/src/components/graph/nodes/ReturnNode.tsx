@@ -1,8 +1,13 @@
-import React, { memo } from 'react';
+import { memo } from 'react';
 import { Handle, Position, NodeProps } from '@xyflow/react';
 
+interface ReturnNodeData {
+  mappings?: Record<string, string>;
+}
+
 export const ReturnNode = memo(({ data, selected }: NodeProps) => {
-  const { mappings = {} } = data;
+  const nodeData = data as ReturnNodeData;
+  const { mappings = {} } = nodeData;
 
   return (
     <div

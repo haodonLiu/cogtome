@@ -12,7 +12,7 @@ export function SelectedMotifList({ motifs, onRemove }: SelectedMotifListProps) 
   if (motifs.length === 0) {
     return (
       <div style={styles.empty}>
-        <p>No motifs selected</p>
+        <p style={styles.emptyTitle}>No motifs selected</p>
         <p style={styles.hint}>Click a motif from the left panel to add it</p>
       </div>
     );
@@ -53,14 +53,19 @@ function SortableMotifItem({ motif, index, onRemove }: SortableMotifItemProps) {
   return (
     <div ref={setNodeRef} style={style} {...attributes}>
       <button style={styles.dragHandle} {...listeners}>
-        &#9776;
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/>
+          <circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/>
+        </svg>
       </button>
       <div style={styles.content}>
         <span style={styles.index}>{index + 1}.</span>
         <span style={styles.name}>{motif.name}</span>
       </div>
-      <button style={styles.removeBtn} onClick={onRemove}>
-        &times;
+      <button style={styles.removeBtn} onClick={onRemove} title="Remove">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
       </button>
     </div>
   );
@@ -70,57 +75,73 @@ const styles: Record<string, React.CSSProperties> = {
   container: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '0.5rem',
+    gap: '8px',
+    padding: '16px 20px',
   },
   empty: {
     textAlign: 'center',
-    padding: '2rem',
-    color: '#888',
-    backgroundColor: '#16213e',
-    borderRadius: '8px',
-    border: '1px dashed #0f3460',
+    padding: '48px 24px',
+    color: 'var(--text-tertiary)',
+    backgroundColor: 'var(--bg-page)',
+    borderRadius: 'var(--radius-md)',
+    border: '1px dashed var(--border)',
+    margin: '16px 20px',
+  },
+  emptyTitle: {
+    margin: '0 0 4px 0',
+    fontSize: '14px',
+    fontWeight: 500,
+    color: 'var(--text-secondary)',
   },
   hint: {
-    fontSize: '0.875rem',
-    marginTop: '0.5rem',
+    fontSize: '13px',
+    margin: 0,
   },
   item: {
     display: 'flex',
     alignItems: 'center',
-    gap: '0.75rem',
-    backgroundColor: '#16213e',
-    border: '1px solid #0f3460',
-    borderRadius: '4px',
-    padding: '0.75rem',
+    gap: '10px',
+    backgroundColor: 'var(--bg-page)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-md)',
+    padding: '10px 12px',
   },
   dragHandle: {
     background: 'none',
     border: 'none',
-    color: '#888',
+    color: 'var(--text-tertiary)',
     cursor: 'grab',
-    fontSize: '1rem',
-    padding: '0.25rem',
+    padding: '4px',
+    display: 'flex',
+    alignItems: 'center',
+    borderRadius: 'var(--radius-sm)',
   },
   content: {
     flex: 1,
     display: 'flex',
     alignItems: 'center',
-    gap: '0.5rem',
+    gap: '8px',
   },
   index: {
-    color: '#888',
-    fontSize: '0.875rem',
+    color: 'var(--text-tertiary)',
+    fontSize: '13px',
+    fontWeight: 500,
+    minWidth: '24px',
   },
   name: {
-    fontWeight: 'bold',
-    color: '#fff',
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+    fontSize: '14px',
   },
   removeBtn: {
     background: 'none',
     border: 'none',
-    color: '#e94560',
+    color: 'var(--danger)',
     cursor: 'pointer',
-    fontSize: '1.5rem',
-    padding: '0 0.5rem',
+    padding: '4px',
+    display: 'flex',
+    alignItems: 'center',
+    borderRadius: 'var(--radius-sm)',
+    transition: 'var(--transition)',
   },
 };

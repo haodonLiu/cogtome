@@ -15,7 +15,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use config::CogtomeConfig;
 use discovery::{extract_first_structure, SkillsDir};
-use engine::{StructureExecutor, UnitConcurrency, UnitRunner, YamlMotifEngine};
+use engine::{GraphMotifEngine, StructureExecutor, UnitConcurrency, UnitRunner};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -55,7 +55,7 @@ enum Commands {
     Discover,
     /// 启动 HTTP API 服务器
     Serve {
-        #[arg(long, default_value = "8080")]
+        #[arg(long, default_value = "3334")]
         port: u16,
     },
     /// 打包 Skill 到 .cogtome 归档
@@ -244,9 +244,11 @@ async fn main() -> Result<()> {
                 let path = skills
                     .find_motif(&name)
                     .ok_or_else(|| anyhow::anyhow!("Motif '{}' not found", name))?;
-                let manifest = YamlMotifEngine::load(&path)?;
-                let engine = YamlMotifEngine;
+
+                let manifest = GraphMotifEngine::load(&path)?;
+                let engine = GraphMotifEngine;
                 let result = engine.execute(&manifest, val, &runner, max_iterations_hard).await?;
+
                 println!("{}", serde_json::to_string_pretty(&result)?);
             }
         },
@@ -357,7 +359,7 @@ async fn main() -> Result<()> {
             let structures_path = skills.root.join(&skills.structures_subdir);
             if let Ok(entries) = std::fs::read_dir(&structures_path) {
                 for entry in entries.flatten() {
-                    if entry.path().join("manifest.yaml").exists() {
+                    if entry.path().join("manifest.json").exists() {
                         structure_count += 1;
                     }
                 }
@@ -367,7 +369,7 @@ async fn main() -> Result<()> {
             if let Ok(entries) = std::fs::read_dir(&motifs_path) {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    if path.extension().map(|e| e == "yaml" || e == "yml").unwrap_or(false) {
+                    if path.extension().map(|e| e == "json").unwrap_or(false) {
                         motif_count += 1;
                     }
                 }

@@ -19,7 +19,7 @@ pub struct StructureInfo {
 pub struct MotifInfo {
     pub name: String,
     pub path: PathBuf,
-    pub step_count: usize,
+    pub node_count: usize,
 }
 
 /// Information about a discovered Unit.
@@ -41,7 +41,7 @@ pub fn list_structures(skills: &SkillsDir) -> Result<Vec<StructureInfo>> {
                 continue;
             }
 
-            let manifest_path = path.join("manifest.yaml");
+            let manifest_path = path.join("manifest.json");
             if !manifest_path.exists() {
                 continue;
             }
@@ -54,14 +54,13 @@ pub fn list_structures(skills: &SkillsDir) -> Result<Vec<StructureInfo>> {
 
             // Try to count motifs in the structure
             let motif_count = if let Ok(content) = std::fs::read_to_string(&manifest_path) {
-                let v: serde_yaml::Value = match serde_yaml::from_str(&content) {
-                    Ok(val) => val,
-                    Err(_) => continue,
-                };
-                v.get("motifs")
-                    .and_then(|v| v.as_sequence())
-                    .map(|s| s.len())
-                    .unwrap_or(0)
+                match serde_json::from_str::<serde_json::Value>(&content) {
+                    Ok(val) => val.get("motifs")
+                        .and_then(|v| v.as_array())
+                        .map(|s| s.len())
+                        .unwrap_or(0),
+                    Err(_) => 0,
+                }
             } else {
                 0
             };
@@ -80,7 +79,7 @@ pub fn list_structures(skills: &SkillsDir) -> Result<Vec<StructureInfo>> {
     Ok(structures)
 }
 
-/// List all motifs in the skills directory.
+/// List all motifs in the skills directory (JSON only).
 pub fn list_motifs(skills: &SkillsDir) -> Result<Vec<MotifInfo>> {
     let motifs_path = skills.root.join(&skills.motifs_subdir);
     let mut motifs = Vec::new();
@@ -89,9 +88,9 @@ pub fn list_motifs(skills: &SkillsDir) -> Result<Vec<MotifInfo>> {
         for entry in entries.flatten() {
             let path = entry.path();
 
-            // Only consider .yaml and .yml files
+            // Only consider .json files
             let ext = path.extension().and_then(|e| e.to_str());
-            if !matches!(ext, Some("yaml") | Some("yml")) {
+            if !matches!(ext, Some("json")) {
                 continue;
             }
 
@@ -101,16 +100,16 @@ pub fn list_motifs(skills: &SkillsDir) -> Result<Vec<MotifInfo>> {
                 .unwrap_or("unknown")
                 .to_string();
 
-            // Try to count steps in the motif
-            let step_count = if let Ok(content) = std::fs::read_to_string(&path) {
-                let v: serde_yaml::Value = match serde_yaml::from_str(&content) {
-                    Ok(val) => val,
-                    Err(_) => continue,
-                };
-                v.get("flow")
-                    .and_then(|v| v.as_sequence())
-                    .map(|s| s.len())
-                    .unwrap_or(0)
+            // Try to count nodes in the motif
+            let node_count = if let Ok(content) = std::fs::read_to_string(&path) {
+                match serde_json::from_str::<serde_json::Value>(&content) {
+                    Ok(val) => val.get("graph")
+                        .and_then(|g| g.get("nodes"))
+                        .and_then(|n| n.as_array())
+                        .map(|a| a.len())
+                        .unwrap_or(0),
+                    Err(_) => 0,
+                }
             } else {
                 0
             };
@@ -118,7 +117,7 @@ pub fn list_motifs(skills: &SkillsDir) -> Result<Vec<MotifInfo>> {
             motifs.push(MotifInfo {
                 name,
                 path,
-                step_count,
+                node_count,
             });
         }
     }

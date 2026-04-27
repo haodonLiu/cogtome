@@ -1,27 +1,29 @@
+// ============================================================================
+// Motif Manifest (YAML) - Legacy types for foreach execution
+// These types are used by the YAML-based motif engine which is deprecated.
+// The new graph-based MotifManifestV2 uses Node::Foreach instead.
+// ============================================================================
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
-// ============================================================================
-// Motif Manifest (YAML)
-// ============================================================================
-
-#[derive(Debug, Deserialize)]
-pub struct MotifManifest {
-    #[allow(dead_code)]
-    pub name: String,
-    #[serde(rename = "type")]
-    #[allow(dead_code)]
-    pub kind: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    pub units_required: Vec<String>,
+#[derive(Debug, Clone, Deserialize)]
+pub struct ForeachBlock {
+    pub over: String,
+    #[serde(default = "default_as_var")]
+    pub as_var: String,
+    #[serde(default = "default_max_iterations")]
+    pub max_iterations: u32,
+    #[serde(default = "default_on_error")]
+    pub on_error: ErrorStrategy,
+    #[serde(default = "default_parallel")]
+    pub parallel: bool,
     pub flow: Vec<FlowStep>,
-    #[serde(default, rename = "return")]
-    pub return_expr: HashMap<String, String>,
+    pub aggregate: AggregateBlock,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct FlowStep {
     pub name: String,
     #[serde(default)]
@@ -66,28 +68,12 @@ pub enum BackoffStrategy {
     Linear,
 }
 
-#[derive(Debug, Deserialize, Clone)]
-pub struct ForeachBlock {
-    pub over: String,
-    #[serde(default = "default_as_var")]
-    pub as_var: String,
-    #[serde(default = "default_max_iterations")]
-    pub max_iterations: u32,
-    #[serde(default = "default_on_error")]
-    pub on_error: ErrorStrategy,
-    #[serde(default = "default_parallel")]
-    pub parallel: bool,
-    pub flow: Vec<FlowStep>,
-    pub aggregate: AggregateBlock,
-}
-
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct AggregateBlock {
     pub mode: AggregateMode,
     #[serde(default)]
     pub map: HashMap<String, String>,
     #[serde(default)]
-    #[allow(dead_code)]
     pub sum: Option<String>,
     #[serde(default)]
     pub join: Option<JoinConfig>,
@@ -110,37 +96,11 @@ pub enum AggregateMode {
     Join,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct JoinConfig {
-    #[allow(dead_code)]
     pub expr: String,
     #[serde(default)]
     pub separator: String,
-}
-
-// ============================================================================
-// Structure Manifest
-// ============================================================================
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct StructureManifest {
-    #[allow(dead_code)]
-    pub name: String,
-    #[serde(rename = "type")]
-    #[allow(dead_code)]
-    pub kind: String,
-    pub motifs: Vec<MotifRef>,
-    #[serde(default)]
-    #[allow(dead_code)]
-    pub input_schema: Option<Value>,
-    #[serde(default)]
-    #[allow(dead_code)]
-    pub output_schema: Option<Value>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct MotifRef {
-    pub name: String,
 }
 
 // ============================================================================

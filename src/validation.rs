@@ -1,8 +1,5 @@
 use crate::discovery::SkillsDir;
-use crate::engine::motif_manifest::{
-    AggregateBlock, AggregateMode, FlowStep, ForeachBlock, MotifManifest, RetryConfig,
-    StepErrorStrategy, StructureManifest,
-};
+use crate::engine::{Graph, GraphValidationError, MotifManifestV2, MotifRef, StructureManifest};
 use crate::error::{CogtomeError, ErrorCode, ErrorLayer};
 use anyhow::{Context, Result};
 use serde_json::Value;
@@ -20,7 +17,7 @@ pub fn validate_input(input: &Value, schema: &Value) -> Result<()> {
 }
 
 // ============================================================================
-// Motif Manifest Validation
+// Motif Manifest Validation (JSON)
 // ============================================================================
 
 /// Validation error with detailed context
@@ -47,133 +44,26 @@ impl ValidationError {
     }
 }
 
-/// Validates a MotifManifest and returns a list of validation errors.
+/// Validates a MotifManifestV2 and returns a list of validation errors.
 /// Empty list means validation passed.
-pub fn validate_motif(motif: &MotifManifest) -> Vec<ValidationError> {
+pub fn validate_motif(motif: &MotifManifestV2) -> Vec<ValidationError> {
     let mut errors = Vec::new();
 
-    // Validate flow has at least one step
-    if motif.flow.is_empty() {
-        errors.push(ValidationError::new(
-            "flow",
-            "motif flow cannot be empty",
-        ));
-    }
-
-    // Validate each flow step
-    for (idx, step) in motif.flow.iter().enumerate() {
-        let step_path = format!("flow[{}]", idx);
-
-        // Validate step has either unit or foreach (not both, not neither)
-        match (&step.unit, &step.foreach) {
-            (None, None) => {
-                errors.push(ValidationError::new(
-                    &format!("{}.name", step_path),
-                    &format!("FlowStep '{}' must have either 'unit' or 'foreach'", step.name),
-                ));
-            }
-            (Some(_), Some(_)) => {
-                errors.push(ValidationError::new(
-                    &format!("{}.name", step_path),
-                    &format!("FlowStep '{}' has both 'unit' and 'foreach' - they are mutually exclusive", step.name),
-                ));
-            }
-            _ => {}
-        }
-
-        // Validate retry config if present
-        if let Some(ref retry) = step.retry {
-            if let Some(err) = validate_retry(retry, &step_path) {
-                errors.push(err);
-            }
-        }
-
-        // Validate on_error + fallback consistency
-        if step.on_error == Some(StepErrorStrategy::Fallback) && step.fallback.is_none() {
-            errors.push(ValidationError::new(
-                &format!("{}.on_error", step_path),
-                &format!("FlowStep '{}' has on_error=fallback but no fallback value", step.name),
-            ));
-        }
-
-        // Validate foreach block if present
-        if let Some(ref foreach) = step.foreach {
-            if let Some(err) = validate_foreach(foreach, &step_path) {
-                errors.push(err);
-            }
-        }
+    // Validate graph structure
+    if let Err(e) = motif.graph.validate() {
+        errors.push(ValidationError::new("graph", &e.to_string()));
     }
 
     errors
 }
 
-fn validate_retry(retry: &RetryConfig, step_path: &str) -> Option<ValidationError> {
-    if retry.max < 1 {
-        return Some(ValidationError::new(
-            &format!("{}.retry.max", step_path),
-            &format!("retry.max must be >= 1, got {}", retry.max),
-        ));
-    }
-    None
-}
-
-fn validate_foreach(foreach: &ForeachBlock, step_path: &str) -> Option<ValidationError> {
-    let foreach_path = format!("{}.foreach", step_path);
-
-    // Validate max_iterations
-    if foreach.max_iterations < 1 {
-        return Some(ValidationError::new(
-            &format!("{}.max_iterations", foreach_path),
-            &format!("max_iterations must be >= 1, got {}", foreach.max_iterations),
-        ));
-    }
-
-    // Validate aggregate mode completeness
-    if let Some(err) = validate_aggregate(&foreach.aggregate, &foreach_path) {
-        return Some(err);
-    }
-
-    // Validate foreach flow is not empty
-    if foreach.flow.is_empty() {
-        return Some(ValidationError::new(
-            &format!("{}.flow", foreach_path),
-            "foreach flow cannot be empty",
-        ));
-    }
-
-    None
-}
-
-fn validate_aggregate(aggregate: &AggregateBlock, path: &str) -> Option<ValidationError> {
-    match aggregate.mode {
-        AggregateMode::Join => {
-            if aggregate.join.is_none() {
-                return Some(ValidationError::new(
-                    &format!("{}.aggregate", path),
-                    "mode=join requires 'join' configuration with 'separator'",
-                ));
-            }
-        }
-        AggregateMode::Sum => {
-            if aggregate.sum.is_none() {
-                return Some(ValidationError::new(
-                    &format!("{}.aggregate", path),
-                    "mode=sum requires 'sum' expression field",
-                ));
-            }
-        }
-        _ => {}
-    }
-    None
-}
-
-/// Validate a motif file at the given path
+/// Validate a motif file at the given path (JSON only)
 pub fn validate_motif_file(path: &Path) -> Result<()> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read file: {}", path.display()))?;
 
-    let motif: MotifManifest = serde_yaml::from_str(&content)
-        .with_context(|| format!("Failed to parse YAML: {}", path.display()))?;
+    let motif: MotifManifestV2 = serde_json::from_str(&content)
+        .with_context(|| format!("Failed to parse JSON: {}", path.display()))?;
 
     let errors = validate_motif(&motif);
     if !errors.is_empty() {
@@ -187,7 +77,7 @@ pub fn validate_motif_file(path: &Path) -> Result<()> {
 }
 
 // ============================================================================
-// Structure Manifest Validation
+// Structure Manifest Validation (JSON)
 // ============================================================================
 
 /// Validates a StructureManifest and returns a list of validation errors.
@@ -234,13 +124,13 @@ pub fn validate_structure_motif_references(
     errors
 }
 
-/// Validate a structure file at the given path
+/// Validate a structure file at the given path (JSON only)
 pub fn validate_structure_file(path: &Path, skills: &SkillsDir) -> Result<()> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read file: {}", path.display()))?;
 
-    let structure: StructureManifest = serde_yaml::from_str(&content)
-        .with_context(|| format!("Failed to parse YAML: {}", path.display()))?;
+    let structure: StructureManifest = serde_json::from_str(&content)
+        .with_context(|| format!("Failed to parse JSON: {}", path.display()))?;
 
     // Validate structure manifest
     let errors = validate_structure(&structure);
@@ -263,15 +153,15 @@ pub fn validate_structure_file(path: &Path, skills: &SkillsDir) -> Result<()> {
     Ok(())
 }
 
-/// Auto-detect manifest type and validate
+/// Auto-detect manifest type and validate (JSON only)
 pub fn validate_manifest_file(path: &Path, skills: &SkillsDir) -> Result<()> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read file: {}", path.display()))?;
 
     // Try to detect type from content
-    if content.contains("type: structure") {
+    if content.contains("\"type\"") && content.contains("\"motifs\"") {
         validate_structure_file(path, skills)?;
-    } else if content.contains("type: motif") || content.contains("flow:") {
+    } else if content.contains("\"type\"") && content.contains("\"graph\"") {
         validate_motif_file(path)?;
     } else {
         anyhow::bail!("Cannot determine manifest type from content");
@@ -284,81 +174,45 @@ pub fn validate_manifest_file(path: &Path, skills: &SkillsDir) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::motif_manifest::{ErrorStrategy, MotifRef};
     use std::collections::HashMap;
 
-    fn make_test_motif(flow: Vec<FlowStep>) -> MotifManifest {
-        MotifManifest {
+    fn make_test_motif_valid() -> MotifManifestV2 {
+        MotifManifestV2 {
             name: "test-motif".to_string(),
             kind: "motif".to_string(),
-            units_required: vec![],
-            flow,
-            return_expr: HashMap::new(),
+            version: None,
+            description: None,
+            required_units: vec![],
+            graph: Graph {
+                nodes: vec![
+                    crate::engine::Node::Start { id: "start".to_string(), position: None },
+                    crate::engine::Node::Return {
+                        id: "ret".to_string(),
+                        values: HashMap::new(),
+                        position: None,
+                    },
+                ],
+                edges: vec![
+                    crate::engine::Edge {
+                        id: None,
+                        source: "start".to_string(),
+                        target: "ret".to_string(),
+                        label: None,
+                        source_handle: None,
+                        target_handle: None,
+                    },
+                ],
+            },
+            input_schema: None,
+            output_schema: None,
         }
     }
 
     #[test]
-    fn test_validate_motif_empty_flow() {
-        let motif = make_test_motif(vec![]);
-        let errors = validate_motif(&motif);
-        assert!(!errors.is_empty());
-        assert!(errors.iter().any(|e| e.message.contains("empty")));
-    }
-
-    #[test]
-    fn test_validate_motif_step_unit_only() {
-        let motif = make_test_motif(vec![FlowStep {
-            name: "step1".to_string(),
-            unit: Some("test-unit".to_string()),
-            input: HashMap::new(),
-            if_cond: None,
-            foreach: None,
-            on_error: None,
-            fallback: None,
-            retry: None,
-            env_whitelist: None,
-        }]);
+    fn test_validate_motif_valid() {
+        let motif = make_test_motif_valid();
         let errors = validate_motif(&motif);
         assert!(errors.is_empty(), "Valid motif should have no errors");
-    }
-
-    #[test]
-    fn test_validate_motif_step_no_unit_no_foreach() {
-        let motif = make_test_motif(vec![FlowStep {
-            name: "step1".to_string(),
-            unit: None,
-            input: HashMap::new(),
-            if_cond: None,
-            foreach: None,
-            on_error: None,
-            fallback: None,
-            retry: None,
-            env_whitelist: None,
-        }]);
-        let errors = validate_motif(&motif);
-        assert!(!errors.is_empty());
-        assert!(errors.iter().any(|e| e.message.contains("must have either")));
-    }
-
-    #[test]
-    fn test_validate_motif_retry_max_zero() {
-        let motif = make_test_motif(vec![FlowStep {
-            name: "step1".to_string(),
-            unit: Some("test-unit".to_string()),
-            input: HashMap::new(),
-            if_cond: None,
-            foreach: None,
-            on_error: None,
-            fallback: None,
-            retry: Some(RetryConfig {
-                max: 0,
-                backoff: crate::engine::motif_manifest::BackoffStrategy::Exponential,
-            }),
-            env_whitelist: None,
-        }]);
-        let errors = validate_motif(&motif);
-        assert!(!errors.is_empty());
-        assert!(errors.iter().any(|e| e.message.contains("retry.max")));
     }
 
     #[test]

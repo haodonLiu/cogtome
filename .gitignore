@@ -10,3 +10,8 @@ credentials.json
 *.temp
 .env
 .env.local
+
+# Web UI
+webui/node_modules
+webui/dist
+webui/package-lock.json

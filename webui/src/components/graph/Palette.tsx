@@ -1,5 +1,4 @@
-import React from 'react';
-import { BlockType } from '../../types';
+import type { BlockType } from '../../types';
 
 interface PaletteProps {
   motifs?: { name: string }[];
@@ -25,6 +24,14 @@ export function BlockPalette({ motifs = [], onDragStart }: PaletteProps) {
         <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 8, fontWeight: 600 }}>▸ Control</div>
         <BlockItem type="if" label="if" color="#f59e0b" onDragStart={onDragStart} />
         <BlockItem type="foreach" label="foreach" color="#06b6d4" onDragStart={onDragStart} />
+        <BlockItem type="match" label="match" color="#ec4899" onDragStart={onDragStart} />
+      </div>
+
+      {/* Parallel */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 8, fontWeight: 600 }}>▸ Parallel</div>
+        <BlockItem type="fork" label="fork" color="#8b5cf6" onDragStart={onDragStart} />
+        <BlockItem type="join" label="join" color="#8b5cf6" onDragStart={onDragStart} />
       </div>
 
       {/* Motifs */}
@@ -42,7 +49,7 @@ export function BlockPalette({ motifs = [], onDragStart }: PaletteProps) {
         ))}
       </div>
 
-      {/* Special */}
+      {/* Output */}
       <div style={{ marginBottom: 16 }}>
         <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 8, fontWeight: 600 }}>▸ Output</div>
         <BlockItem type="return" label="return" color="#22c55e" onDragStart={onDragStart} />

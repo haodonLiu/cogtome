@@ -1,193 +1,48 @@
-import { BlockNode, BlockEdge, Graph } from '../../types';
-import YAML from 'yaml';
+import type { GraphNode, GraphEdge, Graph, MotifManifestV2, Position } from '../../types';
 
 /**
- * COGTOME Motif YAML format:
- * name: <motif-name>
- * type: motif
- * flow:
- *   - name: step1
- *     unit: unit-name
- *     input:
- *       key: ${params.x}
- *   - name: step2
- *     foreach:
- *       over: ${items}
- *       max_iterations: 50
- *       parallel: false
- *       flow: [...]
+ * COGTOME v2 Motif JSON format:
+ * {
+ *   "name": "motif-name",
+ *   "type": "motif",
+ *   "graph": {
+ *     "nodes": [...],
+ *     "edges": [...]
+ *   }
+ * }
  */
 
-export function graphToYaml(nodes: BlockNode[], edges: BlockEdge[], name: string): string {
-  const sorted = topologicalSort(nodes, edges);
-
-  const flow = sorted.map((nodeId) => {
-    const node = nodes.find((n) => n.id === nodeId);
-    if (!node) return null;
-
-    const incomingEdges = edges.filter((e) => e.target === nodeId);
-    const inputMappings: Record<string, string> = {};
-
-    incomingEdges.forEach((edge) => {
-      const sourceNode = nodes.find((n) => n.id === edge.source);
-      if (sourceNode && edge.targetHandle) {
-        inputMappings[edge.targetHandle] = `\${steps.${sourceNode.data.name || edge.source}.output.${edge.sourceHandle}}`;
-      }
-    });
-
-    if (node.data.inputs) {
-      Object.entries(node.data.inputs).forEach(([key, val]) => {
-        if (val && !Object.values(inputMappings).some((v) => v.includes(key))) {
-          inputMappings[key] = val;
-        }
-      });
-    }
-
-    switch (node.type) {
-      case 'unit':
-        return {
-          name: node.data.name || nodeId,
-          unit: node.data.name,
-          input: inputMappings,
-        };
-      case 'foreach':
-        return {
-          name: node.data.name || nodeId,
-          foreach: {
-            over: node.data.over || '',
-            as_var: 'item',
-            max_iterations: node.data.maxIterations || 50,
-            parallel: node.data.parallel || false,
-            flow: node.data.internalGraph
-              ? graphToFlow(node.data.internalGraph.nodes, node.data.internalGraph.edges)
-              : [],
-          },
-        };
-      case 'if':
-        return {
-          name: node.data.name || nodeId,
-          if: {
-            condition: node.data.condition || '',
-            then: [],
-            else: [],
-          },
-        };
-      case 'return':
-        return {
-          return: node.data.mappings || {},
-        };
-      default:
-        return null;
-    }
-  }).filter(Boolean);
-
-  const doc = {
+// Convert internal GraphNode to MotifManifestV2 JSON
+export function graphToJson(nodes: GraphNode[], edges: GraphEdge[], name: string): MotifManifestV2 {
+  return {
     name,
     type: 'motif',
-    flow: flow.filter(Boolean),
+    version: '2.0',
+    graph: {
+      nodes: nodes.map(n => JSON.parse(JSON.stringify(n))),
+      edges: edges.map(e => JSON.parse(JSON.stringify(e))),
+    },
   };
-
-  return YAML.stringify(doc, { indent: 2 });
 }
 
-export function yamlToGraph(yamlString: string, name: string): Graph {
-  const doc = YAML.parse(yamlString);
-  if (!doc || !doc.flow) return { nodes: [], edges: [] };
-
-  const nodes: BlockNode[] = [];
-  const edges: BlockEdge[] = [];
-  let xOffset = 50;
-
-  doc.flow.forEach((step: any, index: number) => {
-    const nodeId = `${step.name || step.unit || 'step'}-${index}`;
-    const position = { x: xOffset, y: 150 };
-
-    if (step.return) {
-      nodes.push({
-        id: nodeId,
-        type: 'return',
-        position,
-        data: { mappings: step.return },
-      });
-    } else if (step.foreach) {
-      const innerGraph = step.foreach.flow
-        ? yamlToGraph(YAML.stringify({ flow: step.foreach.flow }), step.name || 'nested')
-        : undefined;
-      nodes.push({
-        id: nodeId,
-        type: 'foreach',
-        position,
-        data: {
-          name: step.name,
-          over: step.foreach.over,
-          maxIterations: step.foreach.max_iterations,
-          parallel: step.foreach.parallel,
-          internalGraph: innerGraph,
-        },
-      });
-    } else if (step.if) {
-      nodes.push({
-        id: nodeId,
-        type: 'if',
-        position,
-        data: {
-          name: step.name,
-          condition: step.if.condition,
-        },
-      });
-    } else if (step.unit) {
-      nodes.push({
-        id: nodeId,
-        type: 'unit',
-        position,
-        data: {
-          name: step.unit,
-          inputs: step.input || {},
-          outputs: [{ id: 'output', name: 'output', type: 'string' }],
-        },
-      });
-    }
-
-    xOffset += 220;
-  });
-
-  for (let i = 0; i < nodes.length - 1; i++) {
-    edges.push({
-      id: `edge-${i}`,
-      source: nodes[i].id,
-      sourceHandle: 'output',
-      target: nodes[i + 1].id,
-      targetHandle: 'input',
-    });
+// Convert MotifManifestV2 JSON to internal Graph format
+export function jsonToGraph(json: MotifManifestV2 | string): Graph {
+  let manifest: MotifManifestV2;
+  if (typeof json === 'string') {
+    manifest = JSON.parse(json);
+  } else {
+    manifest = json;
   }
 
-  return { nodes, edges };
+  if (!manifest.graph) {
+    return { nodes: [], edges: [] };
+  }
+
+  return manifest.graph;
 }
 
-function graphToFlow(nodes: BlockNode[], edges: BlockEdge[]): any[] {
-  return nodes.map((node) => {
-    const incomingEdges = edges.filter((e) => e.target === node.id);
-    const inputMappings: Record<string, string> = {};
-
-    incomingEdges.forEach((edge) => {
-      const sourceNode = nodes.find((n) => n.id === edge.source);
-      if (sourceNode && edge.targetHandle) {
-        inputMappings[edge.targetHandle] = `\${steps.${sourceNode.data.name || edge.source}.output.${edge.sourceHandle}}`;
-      }
-    });
-
-    switch (node.type) {
-      case 'unit':
-        return { name: node.data.name || node.id, unit: node.data.name, input: inputMappings };
-      case 'return':
-        return { return: node.data.mappings || {} };
-      default:
-        return null;
-    }
-  }).filter(Boolean);
-}
-
-function topologicalSort(nodes: BlockNode[], edges: BlockEdge[]): string[] {
+// Topological sort for execution order
+export function topologicalSort(nodes: GraphNode[], edges: GraphEdge[]): string[] {
   const inDegree: Record<string, number> = {};
   const adj: Record<string, string[]> = {};
 
@@ -219,7 +74,8 @@ function topologicalSort(nodes: BlockNode[], edges: BlockEdge[]): string[] {
   return result;
 }
 
-export function autoLayout(nodes: BlockNode[]): BlockNode[] {
+// Auto-layout nodes in a grid pattern
+export function autoLayout(nodes: GraphNode[]): GraphNode[] {
   const sorted = [...nodes].sort((a, b) => {
     if (Math.abs(a.position.y - b.position.y) > 50) {
       return a.position.y - b.position.y;
@@ -229,6 +85,123 @@ export function autoLayout(nodes: BlockNode[]): BlockNode[] {
 
   return sorted.map((node, i) => ({
     ...node,
-    position: { x: 50 + (i % 5) * 250, y: 50 + Math.floor(i / 5) * 150 },
+    position: { x: 50 + (i % 5) * 250, y: 50 + Math.floor(i / 5) * 150 } as Position,
   }));
+}
+
+// Create a default start node
+export function createStartNode(x: number = 0, y: number = 100): GraphNode {
+  return {
+    id: 'start',
+    type: 'start',
+    position: { x, y },
+    data: {},
+  };
+}
+
+// Create a default return node
+export function createReturnNode(x: number, y: number): GraphNode {
+  return {
+    id: 'return',
+    type: 'return',
+    position: { x, y },
+    data: { values: {} },
+  };
+}
+
+// Create a unit node
+export function createUnitNode(id: string, unitName: string, x: number, y: number): GraphNode {
+  return {
+    id,
+    type: 'unit',
+    position: { x, y },
+    data: { unit: unitName, inputs: {} },
+  };
+}
+
+// Create an if node
+export function createIfNode(id: string, condition: string, x: number, y: number): GraphNode {
+  return {
+    id,
+    type: 'if',
+    position: { x, y },
+    data: { condition },
+  };
+}
+
+// Create a match node
+export function createMatchNode(id: string, on: string, x: number, y: number): GraphNode {
+  return {
+    id,
+    type: 'match',
+    position: { x, y },
+    data: { condition: on },
+  };
+}
+
+// Create a foreach node
+export function createForeachNode(id: string, over: string, x: number, y: number): GraphNode {
+  return {
+    id,
+    type: 'foreach',
+    position: { x, y },
+    data: { over, as_var: 'item', maxIterations: 50, parallel: false, subgraph: { nodes: [], edges: [] } },
+  };
+}
+
+// Create a fork node
+export function createForkNode(id: string, x: number, y: number): GraphNode {
+  return {
+    id,
+    type: 'fork',
+    position: { x, y },
+    data: {},
+  };
+}
+
+// Create a join node
+export function createJoinNode(id: string, x: number, y: number): GraphNode {
+  return {
+    id,
+    type: 'join',
+    position: { x, y },
+    data: {},
+  };
+}
+
+// Create a motif reference node
+export function createMotifNode(id: string, motifName: string, x: number, y: number): GraphNode {
+  return {
+    id,
+    type: 'motif',
+    position: { x, y },
+    data: { motif: motifName, inputs: {} },
+  };
+}
+
+// Generate a unique node ID
+export function generateNodeId(nodes: GraphNode[], prefix: string = 'node'): string {
+  const existing = new Set(nodes.map(n => n.id));
+  let i = 1;
+  while (existing.has(`${prefix}-${i}`)) i++;
+  return `${prefix}-${i}`;
+}
+
+// Generate a unique edge ID
+export function generateEdgeId(edges: GraphEdge[]): string {
+  const existing = new Set(edges.map(e => e.id));
+  let i = 1;
+  while (existing.has(`edge-${i}`)) i++;
+  return `edge-${i}-${Date.now()}`;
+}
+
+// Create a new edge between two nodes
+export function createEdge(source: string, target: string, sourceHandle: string = 'output', targetHandle: string = 'input'): GraphEdge {
+  return {
+    id: `e-${source}-${target}`,
+    source,
+    target,
+    sourceHandle,
+    targetHandle,
+  };
 }

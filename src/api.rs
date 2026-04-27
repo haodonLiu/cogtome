@@ -1,5 +1,5 @@
 use crate::discovery::{extract_first_structure, ComplexInfo, SkillsDir};
-use crate::engine::{StructureExecutor, UnitConcurrency, UnitRunner, YamlMotifEngine};
+use crate::engine::{GraphMotifEngine, StructureExecutor, UnitConcurrency, UnitRunner};
 use crate::error::CogtomeError;
 use crate::metrics;
 use crate::services::{
@@ -100,9 +100,10 @@ pub async fn start_server_with_shutdown(
         .route("/api/structures/:name", get(get_structure_handler))
         .route("/api/structures/:name", put(put_structure_handler))
         .route("/api/structures/:name", delete(delete_structure_handler))
-        // Motif (read-only)
+        // Motif (CRUD)
         .route("/api/motifs", get(list_motifs_handler))
         .route("/api/motifs/:name", get(get_motif_handler))
+        .route("/api/motifs/:name", put(put_motif_handler))
         // Units
         .route("/api/units", get(list_units_handler))
         .route("/api/units/:name", get(get_unit_handler))
@@ -312,9 +313,9 @@ async fn run_execution(
                         format!("Motif '{}' not found", name),
                     )
                 })?;
-            let manifest = YamlMotifEngine::load(&path)
+            let manifest = GraphMotifEngine::load(&path)
                 .map_err(CogtomeError::from)?;
-            let engine = YamlMotifEngine;
+            let engine = GraphMotifEngine;
             let max_hard = load_max_iterations_hard(&state.skills.root);
             engine.execute(&manifest, input, &runner, max_hard)
                 .await
@@ -377,12 +378,8 @@ async fn get_structure_handler(
     let content = std::fs::read_to_string(&path)
         .map_err(|e| CogtomeError::layer_runtime().with_hint(format!("Failed to read: {}", e)))?;
 
-    let yaml: serde_yaml::Value = serde_yaml::from_str(&content)
-        .map_err(|e| CogtomeError::layer_validation().with_hint(format!("Invalid YAML: {}", e)))?;
-
-    // Convert YAML to JSON
-    let json_value = serde_json::to_value(&yaml)
-        .map_err(|e| CogtomeError::layer_runtime().with_hint(format!("Failed to convert to JSON: {}", e)))?;
+    let json_value: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| CogtomeError::layer_validation().with_hint(format!("Invalid JSON: {}", e)))?;
 
     Ok(Json(json_value))
 }
@@ -390,7 +387,7 @@ async fn get_structure_handler(
 #[derive(Debug, Deserialize)]
 struct PutStructureRequest {
     name: String,
-    motifs: Vec<crate::engine::motif_manifest::MotifRef>,
+    motifs: Vec<crate::engine::MotifRef>,
     #[serde(default)]
     input_schema: Option<serde_json::Value>,
     #[serde(default)]
@@ -413,7 +410,7 @@ async fn put_structure_handler(
         ));
     }
 
-    let manifest = crate::engine::motif_manifest::StructureManifest {
+    let manifest = crate::engine::StructureManifest {
         name: req.name,
         kind: "structure".to_string(),
         motifs: req.motifs,
@@ -422,7 +419,7 @@ async fn put_structure_handler(
     };
 
     let dir_path = state.skills.root.join(&state.skills.structures_subdir).join(&name);
-    let file_path = dir_path.join("manifest.yaml");
+    let file_path = dir_path.join("manifest.json");
 
     service_write_structure(&file_path, &manifest)
         .map_err(|e| CogtomeError::layer_runtime().with_hint(format!("Failed to write: {}", e)))?;
@@ -492,6 +489,28 @@ async fn get_motif_handler(
         .map_err(|e| CogtomeError::layer_runtime().with_hint(format!("Failed to read: {}", e)))?;
 
     Ok(content)
+}
+
+async fn put_motif_handler(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+    Json(content): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, CogtomeError> {
+    validate_name(&name)?;
+
+    let motif_path = state.skills.root.join(&state.skills.motifs_subdir).join(format!("{}.json", name));
+    let json_str = serde_json::to_string_pretty(&content)
+        .map_err(|e| CogtomeError::layer_runtime().with_hint(format!("Failed to serialize: {}", e)))?;
+
+    if let Some(parent) = motif_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| CogtomeError::layer_runtime().with_hint(format!("Failed to create directory: {}", e)))?;
+    }
+
+    std::fs::write(&motif_path, json_str)
+        .map_err(|e| CogtomeError::layer_runtime().with_hint(format!("Failed to write: {}", e)))?;
+
+    Ok(Json(serde_json::json!({ "message": "Motif saved", "path": motif_path })))
 }
 
 // ============================================================================

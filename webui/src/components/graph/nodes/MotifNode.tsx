@@ -1,8 +1,14 @@
-import React, { memo } from 'react';
+import { memo } from 'react';
 import { Handle, Position, NodeProps } from '@xyflow/react';
 
+interface MotifNodeData {
+  name?: string;
+  expanded?: boolean;
+}
+
 export const MotifNode = memo(({ data, selected }: NodeProps) => {
-  const { name = '', expanded = false } = data;
+  const nodeData = data as MotifNodeData;
+  const { name = '', expanded = false } = nodeData;
 
   return (
     <div

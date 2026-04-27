@@ -14,8 +14,7 @@ import { BlockPalette } from '../graph/Palette';
 import { PropertyPanel } from './PropertyPanel';
 import { getStructure, saveStructure, listMotifs } from '../../api/client';
 import { BlockNode, BlockEdge, BlockType, MotifInfo } from '../../types/index';
-import { autoLayout, yamlToGraph, graphToYaml } from '../graph/graphUtils';
-import YAML from 'yaml';
+import { autoLayout } from '../graph/graphUtils';
 
 export function StructureEditor() {
   const { name } = useParams<{ name: string }>();
@@ -23,7 +22,6 @@ export function StructureEditor() {
   const [motifs, setMotifs] = useState<MotifInfo[]>([]);
   const [selectedNode, setSelectedNode] = useState<BlockNode | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<BlockEdge | null>(null);
-  const [viewMode, setViewMode] = useState<'graph' | 'yaml'>('graph');
   const [nodes, setNodes, onNodesChange] = useNodesState<BlockNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<BlockEdge>([]);
 
@@ -146,21 +144,7 @@ export function StructureEditor() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 16px', background: '#0f0f1a', borderBottom: '1px solid #3b3b5c' }}>
         <button onClick={() => navigate(-1)} style={buttonStyle}>← Back</button>
         <h2 style={{ margin: 0, color: '#e2e8f0', fontFamily: 'monospace' }}>Structure: {name}</h2>
-        <div style={{ display: 'flex', gap: 4, flex: 1 }} />
-        <div style={{ display: 'flex', gap: 4 }}>
-          <button
-            onClick={() => setViewMode('graph')}
-            style={{ ...viewButtonStyle, background: viewMode === 'graph' ? '#7c3aed' : '#1a1a2e' }}
-          >
-            Graph
-          </button>
-          <button
-            onClick={() => setViewMode('yaml')}
-            style={{ ...viewButtonStyle, background: viewMode === 'yaml' ? '#7c3aed' : '#1a1a2e' }}
-          >
-            YAML
-          </button>
-        </div>
+        <div style={{ display: 'flex', gap: 4, flex: 1, justifyContent: 'flex-end' }} />
         <button onClick={handleSave} style={buttonStyle}>Save</button>
         <button
           onClick={() => {
@@ -177,57 +161,32 @@ export function StructureEditor() {
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         <BlockPalette
           motifs={motifs}
-          onDragStart={(type, blockName) => {}}
+          onDragStart={() => {}}
         />
 
-        {viewMode === 'yaml' ? (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <textarea
-              value={graphToYaml(nodes as BlockNode[], edges as BlockEdge[], name || '')}
-              onChange={(e) => {
-                try {
-                  const { nodes: parsed } = yamlToGraph(e.target.value, name || '');
-                  setNodes(parsed.map(toRFNode) as any);
-                  setEdges([]);
-                } catch {}
-              }}
-              style={{
-                flex: 1,
-                background: '#0f0f1a',
-                color: '#e2e8f0',
-                fontFamily: 'monospace',
-                fontSize: 13,
-                padding: 16,
-                border: 'none',
-                resize: 'none',
-              }}
-            />
-          </div>
-        ) : (
-          <div
-            style={{ flex: 1, position: 'relative' }}
-            onDragOver={handleDragOver}
-            onDrop={handleDrop}
+        <div
+          style={{ flex: 1, position: 'relative' }}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+        >
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onNodeClick={onNodeClick}
+            onEdgeClick={onEdgeClick}
+            nodeTypes={nodeTypes}
+            fitView
+            snapToGrid
+            snapGrid={[16, 16]}
           >
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              onNodeClick={onNodeClick}
-              onEdgeClick={onEdgeClick}
-              nodeTypes={nodeTypes}
-              fitView
-              snapToGrid
-              snapGrid={[16, 16]}
-            >
-              <Background />
-              <Controls />
-              <MiniMap />
-            </ReactFlow>
-          </div>
-        )}
+            <Background />
+            <Controls />
+            <MiniMap />
+          </ReactFlow>
+        </div>
 
         <PropertyPanel
           selectedNode={selectedNode as BlockNode | null}
@@ -274,7 +233,7 @@ function toRFEdge(edge: BlockEdge) {
   };
 }
 
-function parseStructureManifest(manifest: any, motifs: MotifInfo[]): { nodes: BlockNode[]; edges: BlockEdge[] } {
+function parseStructureManifest(manifest: any, _motifs: MotifInfo[]): { nodes: BlockNode[]; edges: BlockEdge[] } {
   const nodes: BlockNode[] = [];
   const edges: BlockEdge[] = [];
   let xOffset = 50;
@@ -305,7 +264,7 @@ function parseStructureManifest(manifest: any, motifs: MotifInfo[]): { nodes: Bl
   return { nodes, edges };
 }
 
-function graphToStructureManifest(nodes: BlockNode[], edges: BlockEdge[], name: string): any {
+function graphToStructureManifest(nodes: BlockNode[], _edges: BlockEdge[], name: string): any {
   const motifRefs = nodes
     .filter((n) => n.type === 'motif')
     .map((n) => ({ name: n.data.name || '' }));
@@ -326,16 +285,5 @@ const buttonStyle: React.CSSProperties = {
   padding: '8px 16px',
   borderRadius: 4,
   cursor: 'pointer',
-  fontFamily: 'monospace',
-};
-
-const viewButtonStyle: React.CSSProperties = {
-  background: '#1a1a2e',
-  color: '#e2e8f0',
-  border: '1px solid #3b3b5c',
-  padding: '6px 12px',
-  borderRadius: 4,
-  cursor: 'pointer',
-  fontSize: 12,
   fontFamily: 'monospace',
 };

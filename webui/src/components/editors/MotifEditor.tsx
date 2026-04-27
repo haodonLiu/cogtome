@@ -1,60 +1,41 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ReactFlow,
   Background,
   Controls,
   MiniMap,
-  NodeChange,
-  EdgeChange,
   Connection,
-  useNodesState,
-  useEdgesState,
-  OnNodesChange,
-  OnEdgesChange,
-  OnConnect,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { UnitNode } from '../graph/nodes/UnitNode';
-import { IfNode } from '../graph/nodes/IfNode';
-import { ForeachNode } from '../graph/nodes/ForeachNode';
-import { ReturnNode } from '../graph/nodes/ReturnNode';
-import { MotifNode } from '../graph/nodes/MotifNode';
+import { nodeTypes } from '../graph/nodes';
 import { BlockPalette } from '../graph/Palette';
 import { PropertyPanel } from './PropertyPanel';
 import { getMotif, saveMotif, listMotifs } from '../../api/client';
-import { BlockNode, BlockEdge, BlockType, MotifInfo } from '../../types';
-import { autoLayout, yamlToGraph } from '../graph/graphUtils';
-import YAML from 'yaml';
-
-const nodeTypes = {
-  unit: UnitNode,
-  if: IfNode,
-  foreach: ForeachNode,
-  return: ReturnNode,
-  motif: MotifNode,
-};
+import { BlockType, MotifInfo, GraphNode, GraphEdge } from '../../types';
+import { autoLayout, jsonToGraph, graphToJson } from '../graph/graphUtils';
 
 export function MotifEditor() {
   const { name } = useParams<{ name: string }>();
   const navigate = useNavigate();
-  const [motifs, setMotifs] = useState<MotifInfo[]>([]);
-  const [selectedNode, setSelectedNode] = useState<BlockNode | null>(null);
-  const [selectedEdge, setSelectedEdge] = useState<BlockEdge | null>(null);
-  const [viewMode, setViewMode] = useState<'graph' | 'yaml'>('graph');
-  const [nodes, setNodes, onNodesChange] = useNodesState<BlockNode>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<BlockEdge>([]);
+    const [motifs, setMotifs] = useState<MotifInfo[]>([]);
+  const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
+  const [selectedEdge, setSelectedEdge] = useState<GraphEdge | null>(null);
+  const [viewMode, setViewMode] = useState<'graph' | 'json'>('graph');
+  const [nodes, setNodes] = useState<GraphNode[]>([]);
+  const [edges, setEdges] = useState<GraphEdge[]>([]);
+  const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
 
-  useEffect(() => {
-    listMotifs().then(setMotifs).catch(() => {});
-    if (name) {
-      getMotif(name).then((yaml) => {
-        const { nodes: parsedNodes, edges: parsedEdges } = parseMotifYaml(yaml);
-        setNodes(parsedNodes.map(toRFNode));
-        setEdges(parsedEdges.map(toRFEdge));
-      }).catch(() => {});
-    }
-  }, [name]);
+  // Keep refs in sync
+  useEffect(() => { nodesRef.current = nodes; }, [nodes]);
+  useEffect(() => { edgesRef.current = edges; }, [edges]);
+
+  // Memoized JSON for textarea
+  const jsonContent = useMemo(() =>
+    JSON.stringify(graphToJson(nodes, edges, name || ''), null, 2),
+    [nodes, edges, name]
+  );
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -68,39 +49,64 @@ export function MotifEditor() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedNode, selectedEdge]);
 
-  const onConnect: OnConnect = useCallback(
+  useEffect(() => {
+    listMotifs().then(setMotifs).catch(console.error);
+    if (name) {
+      getMotif(name).then((manifest) => {
+        const { nodes: parsedNodes, edges: parsedEdges } = jsonToGraph(manifest);
+        setNodes(parsedNodes);
+        setEdges(parsedEdges);
+      }).catch(console.error);
+    }
+  }, [name]);
+
+  const onConnect = useCallback(
     (connection: Connection) => {
       if (!connection.source || !connection.target) return;
-      const edge: BlockEdge = {
+      const edge: GraphEdge = {
         id: `edge-${Date.now()}`,
         source: connection.source,
-        sourceHandle: connection.sourceHandle || '',
+        sourceHandle: connection.sourceHandle || 'output',
         target: connection.target,
-        targetHandle: connection.targetHandle || '',
+        targetHandle: connection.targetHandle || 'input',
       };
-      setEdges((eds) => [...eds, toRFEdge(edge)]);
+      setEdges((eds) => [...eds, edge]);
     },
     [setEdges]
   );
 
-  const onNodeClick = useCallback((_: React.MouseEvent, node: any) => {
-    const blockNode = nodes.find((n) => n.id === node.id);
-    setSelectedNode(blockNode || null);
+  const onNodeClick = useCallback((_: React.MouseEvent, node: { id: string }) => {
+    const graphNode = nodes.find((n: GraphNode) => n.id === node.id);
+    setSelectedNode(graphNode || null);
     setSelectedEdge(null);
   }, [nodes]);
 
-  const onEdgeClick = useCallback((_: React.MouseEvent, edge: any) => {
-    const blockEdge = edges.find((e) => e.id === edge.id);
-    setSelectedEdge(blockEdge || null);
+  const onEdgeClick = useCallback((_: React.MouseEvent, edge: { id: string }) => {
+    const graphEdge = edges.find((e: GraphEdge) => e.id === edge.id);
+    setSelectedEdge(graphEdge || null);
     setSelectedNode(null);
   }, [edges]);
 
-  const onNodesChangeHandler: OnNodesChange = useCallback(
-    (changes: NodeChange[]) => {
-      onNodesChange(changes);
-    },
-    [onNodesChange]
-  );
+  const onNodesChange = useCallback((changes: any[]) => {
+    setNodes((nds) => changes.reduce<GraphNode[]>((acc, change) => {
+      if (change.type === 'position' && change.position) {
+        return acc.map((n) => n.id === change.id ? { ...n, position: change.position } : n);
+      }
+      if (change.type === 'remove') {
+        return acc.filter((n) => n.id !== change.id);
+      }
+      return acc;
+    }, nds));
+  }, []);
+
+  const onEdgesChange = useCallback((changes: any[]) => {
+    setEdges((eds) => changes.reduce<GraphEdge[]>((acc, change) => {
+      if (change.type === 'remove') {
+        return acc.filter((e) => e.id !== change.id);
+      }
+      return acc;
+    }, eds));
+  }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -111,7 +117,6 @@ export function MotifEditor() {
     (e: React.DragEvent) => {
       e.preventDefault();
       const type = e.dataTransfer.getData('application/reactflow') as BlockType;
-      const blockName = e.dataTransfer.getData('application/blockname');
       if (!type) return;
 
       const reactFlowBounds = e.currentTarget.getBoundingClientRect();
@@ -121,19 +126,19 @@ export function MotifEditor() {
       };
 
       const id = `${type}-${Date.now()}`;
-      const newNode = {
+      const newNode: GraphNode = {
         id,
         type,
         position,
-        data: createNodeData(type, blockName),
+        data: createNodeData(type),
       };
-      setNodes((nds) => [...nds, newNode as any]);
+      setNodes((nds) => [...nds, newNode]);
     },
     [setNodes]
   );
 
   const updateNodeData = useCallback(
-    (id: string, data: Partial<BlockNode['data']>) => {
+    (id: string, data: Partial<GraphNode['data']>) => {
       setNodes((nds) =>
         nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...data } } : n))
       );
@@ -161,8 +166,8 @@ export function MotifEditor() {
 
   const handleSave = async () => {
     if (!name) return;
-    const yaml = graphToYaml(nodes as BlockNode[], edges as BlockEdge[], name);
-    await saveMotif(name, yaml);
+    const manifest = graphToJson(nodes, edges, name);
+    await saveMotif(name, manifest);
   };
 
   return (
@@ -180,17 +185,17 @@ export function MotifEditor() {
             Graph
           </button>
           <button
-            onClick={() => setViewMode('yaml')}
-            style={{ ...viewButtonStyle, background: viewMode === 'yaml' ? '#7c3aed' : '#1a1a2e' }}
+            onClick={() => setViewMode('json')}
+            style={{ ...viewButtonStyle, background: viewMode === 'json' ? '#7c3aed' : '#1a1a2e' }}
           >
-            YAML
+            JSON
           </button>
         </div>
         <button onClick={handleSave} style={buttonStyle}>Save</button>
         <button
           onClick={() => {
-            const layouted = autoLayout(nodes as BlockNode[]);
-            setNodes(layouted.map(toRFNode) as any);
+            const layouted = autoLayout(nodes);
+            setNodes(layouted);
           }}
           style={{ ...buttonStyle, background: '#1a1a2e' }}
         >
@@ -202,20 +207,19 @@ export function MotifEditor() {
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         <BlockPalette
           motifs={motifs}
-          onDragStart={(type, blockName) => {
-            // Store drag data
-          }}
+          onDragStart={() => {}}
         />
 
-        {viewMode === 'yaml' ? (
+        {viewMode === 'json' ? (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
             <textarea
-              value={graphToYaml(nodes as BlockNode[], edges as BlockEdge[], name || '')}
+              value={jsonContent}
               onChange={(e) => {
                 try {
-                  const { nodes: parsed } = yamlToGraph(e.target.value, name || '');
-                  setNodes(parsed.map(toRFNode) as any);
-                  setEdges([]);
+                  const manifest = JSON.parse(e.target.value);
+                  const { nodes: parsed } = jsonToGraph(manifest);
+                  setNodes(parsed);
+                  setEdges(parsed.length > 0 && 'edges' in (manifest as any) ? (manifest as any).graph.edges : []);
                 } catch {}
               }}
               style={{
@@ -239,7 +243,7 @@ export function MotifEditor() {
             <ReactFlow
               nodes={nodes}
               edges={edges}
-              onNodesChange={onNodesChangeHandler}
+              onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
               onNodeClick={onNodeClick}
@@ -257,8 +261,8 @@ export function MotifEditor() {
         )}
 
         <PropertyPanel
-          selectedNode={selectedNode as BlockNode | null}
-          selectedEdge={selectedEdge as BlockEdge | null}
+          selectedNode={selectedNode}
+          selectedEdge={selectedEdge}
           onUpdateNode={updateNodeData}
           onDeleteNode={deleteNode}
           onDeleteEdge={deleteEdge}
@@ -268,116 +272,29 @@ export function MotifEditor() {
   );
 }
 
-function createNodeData(type: BlockType, name?: string): BlockNode['data'] {
+function createNodeData(type: BlockType): GraphNode['data'] {
   switch (type) {
     case 'unit':
-      return { name: name || '', inputs: { input: '' }, outputs: [{ id: 'out-1', name: 'output', type: 'string' }] };
+      return { unit: '', inputs: {} };
     case 'if':
       return { condition: '' };
+    case 'match':
+      return { condition: '' };
     case 'foreach':
-      return { over: '', maxIterations: 50, parallel: false };
+      return { over: '', as_var: 'item', maxIterations: 50, parallel: false, subgraph: { nodes: [], edges: [] } };
+    case 'fork':
+      return {};
+    case 'join':
+      return {};
     case 'return':
-      return { mappings: {} };
+      return { values: {} };
     case 'motif':
-      return { name: name || '' };
+      return { motif: '', inputs: {} };
+    case 'start':
+      return {};
     default:
       return {};
   }
-}
-
-function toRFNode(node: BlockNode) {
-  return {
-    id: node.id,
-    type: node.type,
-    position: node.position,
-    data: node.data,
-  };
-}
-
-function toRFEdge(edge: BlockEdge) {
-  return {
-    id: edge.id,
-    source: edge.source,
-    target: edge.target,
-    sourceHandle: edge.sourceHandle,
-    targetHandle: edge.targetHandle,
-    type: 'smoothstep',
-    animated: true,
-  };
-}
-
-function parseMotifYaml(yamlString: string): { nodes: BlockNode[]; edges: BlockEdge[] } {
-  const doc = YAML.parse(yamlString);
-  if (!doc || !doc.flow) return { nodes: [], edges: [] };
-
-  const nodes: BlockNode[] = [];
-  const edges: BlockEdge[] = [];
-  let xOffset = 50;
-
-  doc.flow.forEach((step: any, index: number) => {
-    const nodeId = `${step.name || step.unit || 'step'}-${index}`;
-    const position = { x: xOffset, y: 150 };
-
-    if (step.return) {
-      nodes.push({ id: nodeId, type: 'return', position, data: { mappings: step.return } });
-    } else if (step.foreach) {
-      nodes.push({ id: nodeId, type: 'foreach', position, data: { name: step.name, over: step.foreach.over, maxIterations: step.foreach.max_iterations, parallel: step.foreach.parallel } });
-    } else if (step.if) {
-      nodes.push({ id: nodeId, type: 'if', position, data: { name: step.name, condition: step.if.condition } });
-    } else if (step.unit) {
-      nodes.push({ id: nodeId, type: 'unit', position, data: { name: step.unit, inputs: step.input || {} } });
-    }
-
-    xOffset += 220;
-  });
-
-  // Sequential edges
-  for (let i = 0; i < nodes.length - 1; i++) {
-    edges.push({
-      id: `edge-${i}`,
-      source: nodes[i].id,
-      sourceHandle: 'output',
-      target: nodes[i + 1].id,
-      targetHandle: 'input',
-    });
-  }
-
-  return { nodes, edges };
-}
-
-function graphToYaml(nodes: BlockNode[], edges: BlockEdge[], name: string): string {
-  const flow = nodes.map((node) => {
-    const incomingEdges = edges.filter((e) => e.target === node.id);
-    const inputMappings: Record<string, string> = {};
-
-    incomingEdges.forEach((edge) => {
-      const sourceNode = nodes.find((n) => n.id === edge.source);
-      if (sourceNode && edge.targetHandle) {
-        inputMappings[edge.targetHandle] = `\${steps.${sourceNode.data.name || edge.source}.output.${edge.sourceHandle}}`;
-      }
-    });
-
-    if (node.data.inputs) {
-      Object.entries(node.data.inputs).forEach(([key, val]) => {
-        if (val) inputMappings[key] = val;
-      });
-    }
-
-    switch (node.type) {
-      case 'unit':
-        return { name: node.data.name || node.id, unit: node.data.name, input: inputMappings };
-      case 'foreach':
-        return { name: node.data.name || node.id, foreach: { over: node.data.over || '', as_var: 'item', max_iterations: node.data.maxIterations || 50, parallel: node.data.parallel || false, flow: [] } };
-      case 'if':
-        return { name: node.data.name || node.id, if: { condition: node.data.condition || '', then: [], else: [] } };
-      case 'return':
-        return { return: node.data.mappings || {} };
-      default:
-        return null;
-    }
-  }).filter(Boolean);
-
-  return YAML.stringify({ name, type: 'motif', flow }, { indent: 2 });
 }
 
 const buttonStyle: React.CSSProperties = {

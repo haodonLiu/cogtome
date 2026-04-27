@@ -55,34 +55,26 @@ impl SkillsDir {
         })
     }
 
-    /// 查找 Motif 定义文件
+    /// 查找 Motif 定义文件（仅 JSON 格式）
     pub fn find_motif(&self, name: &str) -> Option<PathBuf> {
-        for ext in ["yaml", "yml", "py", "sh"] {
-            let global = self.root.join(&self.motifs_subdir).join(format!("{}.{}", name, ext));
-            if global.exists() {
-                return Some(global);
-            }
-        }
-        Self::scan_dirs(&self.root, |p| {
-            let dir = p.join(&self.motifs_subdir);
-            for ext in ["yaml", "yml", "py", "sh"] {
-                let candidate = dir.join(format!("{}.{}", name, ext));
-                if candidate.exists() {
-                    return Some(candidate);
-                }
-            }
-            None
-        })
-    }
-
-    /// 查找 Structure manifest
-    pub fn find_structure(&self, name: &str) -> Option<PathBuf> {
-        let global = self.root.join(&self.structures_subdir).join(name).join("manifest.yaml");
+        let global = self.root.join(&self.motifs_subdir).join(format!("{}.json", name));
         if global.exists() {
             return Some(global);
         }
         Self::scan_dirs(&self.root, |p| {
-            let candidate = p.join(&self.structures_subdir).join(name).join("manifest.yaml");
+            let candidate = p.join(&self.motifs_subdir).join(format!("{}.json", name));
+            candidate.exists().then_some(candidate)
+        })
+    }
+
+    /// 查找 Structure manifest（仅 JSON 格式）
+    pub fn find_structure(&self, name: &str) -> Option<PathBuf> {
+        let global = self.root.join(&self.structures_subdir).join(name).join("manifest.json");
+        if global.exists() {
+            return Some(global);
+        }
+        Self::scan_dirs(&self.root, |p| {
+            let candidate = p.join(&self.structures_subdir).join(name).join("manifest.json");
             candidate.exists().then_some(candidate)
         })
     }

@@ -24,6 +24,7 @@ interface StructureStore {
   selectStructure: (name: string) => Promise<void>;
   updateStructure: (data: Partial<StructureManifest>) => void;
   saveStructure: () => Promise<void>;
+  deleteStructure: (name: string) => Promise<void>;
   clearCurrent: () => void;
 
   // Motif management
@@ -67,6 +68,7 @@ export const useStructureStore = create<StructureStore>((set, get) => ({
     set({
       currentStructure: {
         name: '',
+        type: 'structure',
         motifs: [],
       },
       isDirty: false,
@@ -100,6 +102,18 @@ export const useStructureStore = create<StructureStore>((set, get) => ({
     try {
       await api.saveStructure(currentStructure.name, currentStructure);
       set({ isSaving: false, isDirty: false });
+      // Reload structures list
+      await get().loadStructures();
+    } catch (e) {
+      set({ saveError: (e as Error).message, isSaving: false });
+    }
+  },
+
+  deleteStructure: async (name: string) => {
+    set({ isSaving: true, saveError: null });
+    try {
+      await api.deleteStructure(name);
+      set({ isSaving: false });
       // Reload structures list
       await get().loadStructures();
     } catch (e) {

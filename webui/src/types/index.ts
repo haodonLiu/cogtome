@@ -1,3 +1,7 @@
+// ============================================================================
+// COGTOME v2.0 Types
+// ============================================================================
+
 export interface MotifRef {
   name: string;
 }
@@ -47,8 +51,17 @@ export interface ValidationError {
   message: string;
 }
 
-// Graph types for visual editor
-export type BlockType = 'unit' | 'if' | 'foreach' | 'return' | 'motif';
+// ============================================================================
+// Graph Types for Visual Editor (v2)
+// ============================================================================
+
+// Node types matching COGTOME v2 spec
+export type NodeType = 'start' | 'unit' | 'if' | 'match' | 'foreach' | 'fork' | 'join' | 'return' | 'motif';
+
+export interface Position {
+  x: number;
+  y: number;
+}
 
 export interface Port {
   id: string;
@@ -56,12 +69,15 @@ export interface Port {
   type: 'string' | 'number' | 'boolean' | 'array' | 'object';
 }
 
-export interface BlockNode {
+// Graph node for React Flow / visual editor
+export interface GraphNode {
   id: string;
-  type: BlockType;
-  position: { x: number; y: number };
+  type: NodeType;
+  position: Position;
   data: {
     name?: string;
+    unit?: string;
+    motif?: string;
     inputs?: Record<string, string>;
     outputs?: Port[];
     condition?: string;
@@ -69,20 +85,44 @@ export interface BlockNode {
     maxIterations?: number;
     parallel?: boolean;
     mappings?: Record<string, string>;
+    values?: Record<string, string>;
     expanded?: boolean;
     internalGraph?: Graph;
+    subgraph?: Graph;
+    as_var?: string;
+    [key: string]: unknown;
   };
 }
 
-export interface BlockEdge {
+// Graph edge for React Flow
+export interface GraphEdge {
   id: string;
   source: string;
   sourceHandle: string;
   target: string;
   targetHandle: string;
+  label?: string;
 }
 
+// Graph container
 export interface Graph {
-  nodes: BlockNode[];
-  edges: BlockEdge[];
+  nodes: GraphNode[];
+  edges: GraphEdge[];
 }
+
+// Full Motif manifest v2
+export interface MotifManifestV2 {
+  name: string;
+  type: 'motif';
+  version?: string;
+  description?: string;
+  required_units?: string[];
+  graph: Graph;
+  input_schema?: JsonSchema;
+  output_schema?: JsonSchema;
+}
+
+// Backward compatibility aliases
+export type BlockType = NodeType;
+export type BlockNode = GraphNode;
+export type BlockEdge = GraphEdge;

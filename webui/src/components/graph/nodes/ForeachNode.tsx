@@ -1,8 +1,16 @@
-import React, { memo } from 'react';
+import { memo } from 'react';
 import { Handle, Position, NodeProps } from '@xyflow/react';
 
+interface ForeachNodeData {
+  over?: string;
+  maxIterations?: number;
+  expanded?: boolean;
+  body?: any[];
+}
+
 export const ForeachNode = memo(({ data, selected }: NodeProps) => {
-  const { over = '', maxIterations = 50, expanded = false } = data;
+  const nodeData = data as ForeachNodeData;
+  const { over = '', maxIterations = 50, expanded = false } = nodeData;
 
   return (
     <div
@@ -52,7 +60,7 @@ export const ForeachNode = memo(({ data, selected }: NodeProps) => {
 
       {expanded && (
         <div style={{ color: '#64748b', fontSize: 11, fontStyle: 'italic', marginTop: 4 }}>
-          (body: {data.body?.length || 0} nodes)
+          (body: {nodeData.body?.length || 0} nodes)
         </div>
       )}
 

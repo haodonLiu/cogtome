@@ -1,44 +1,53 @@
 import { create } from 'zustand';
-import { BlockNode, BlockEdge, Graph, BlockType } from '../types';
+import type { GraphNode, GraphEdge, Graph, BlockType, Position } from '../types';
 
 interface GraphStore {
   // Graph data
-  nodes: BlockNode[];
-  edges: BlockEdge[];
+  nodes: GraphNode[];
+  edges: GraphEdge[];
   selectedNodeId: string | null;
   selectedEdgeId: string | null;
 
   // Actions
   setGraph: (graph: Graph) => void;
-  addNode: (type: BlockType, position: { x: number; y: number }, name?: string) => void;
-  updateNode: (id: string, data: Partial<BlockNode['data']>) => void;
+  addNode: (type: BlockType, position: Position, name?: string, data?: Partial<GraphNode['data']>) => void;
+  updateNode: (id: string, data: Partial<GraphNode['data']>) => void;
   removeNode: (id: string) => void;
-  addEdge: (source: string, sourceHandle: string, target: string, targetHandle: string) => void;
+  addEdge: (source: string, sourceHandle: string, target: string, targetHandle: string, label?: string) => void;
   removeEdge: (id: string) => void;
   selectNode: (id: string | null) => void;
   selectEdge: (id: string | null) => void;
-  updateNodePosition: (id: string, position: { x: number; y: number }) => void;
+  updateNodePosition: (id: string, position: Position) => void;
   clearGraph: () => void;
 
   // Serialization
   toGraph: () => Graph;
 }
 
-const createDefaultOutputs = (type: BlockType): BlockNode['data']['outputs'] => {
-  if (type === 'return') return [];
-  return [
-    { id: 'out-1', name: 'output', type: 'string' },
-  ];
-};
-
-const createDefaultInputs = (type: BlockType): BlockNode['data']['inputs'] => {
+function createDefaultNodeData(type: BlockType): GraphNode['data'] {
   switch (type) {
-    case 'unit': return { input: '' };
-    case 'if': return {};
-    case 'foreach': return {};
-    default: return {};
+    case 'unit':
+      return { unit: '', inputs: {} };
+    case 'if':
+      return { condition: '' };
+    case 'match':
+      return { condition: '' };
+    case 'foreach':
+      return { over: '', as_var: 'item', maxIterations: 50, parallel: false, subgraph: { nodes: [], edges: [] } };
+    case 'fork':
+      return {};
+    case 'join':
+      return {};
+    case 'return':
+      return { values: {} };
+    case 'motif':
+      return { motif: '', inputs: {} };
+    case 'start':
+      return {};
+    default:
+      return {};
   }
-};
+}
 
 export const useGraphStore = create<GraphStore>((set, get) => ({
   nodes: [],
@@ -48,20 +57,14 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
 
   setGraph: (graph) => set({ nodes: graph.nodes, edges: graph.edges }),
 
-  addNode: (type, position, name = '') => {
+  addNode: (type, position, name = '', data = {}) => {
     const id = `${type}-${Date.now()}`;
-    const newNode: BlockNode = {
+    const defaultData = createDefaultNodeData(type);
+    const newNode: GraphNode = {
       id,
       type,
       position,
-      data: {
-        name,
-        inputs: createDefaultInputs(type),
-        outputs: createDefaultOutputs(type),
-        maxIterations: 50,
-        parallel: false,
-        expanded: false,
-      },
+      data: { ...defaultData, name, ...data },
     };
     set((state) => ({ nodes: [...state.nodes, newNode] }));
   },
@@ -81,9 +84,9 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
     }));
   },
 
-  addEdge: (source, sourceHandle, target, targetHandle) => {
-    const id = `edge-${source}-${sourceHandle}-${target}-${targetHandle}`;
-    const newEdge: BlockEdge = { id, source, sourceHandle, target, targetHandle };
+  addEdge: (source, sourceHandle, target, targetHandle, label) => {
+    const id = `edge-${source}-${target}`;
+    const newEdge: GraphEdge = { id, source, sourceHandle, target, targetHandle, label };
     set((state) => ({ edges: [...state.edges, newEdge] }));
   },
 

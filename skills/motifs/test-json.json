@@ -1,0 +1,36 @@
+{
+  "name": "test-json",
+  "type": "motif",
+  "version": "2.0",
+  "required_units": ["echo"],
+  "graph": {
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "position": { "x": 0, "y": 100 }
+      },
+      {
+        "id": "echo_step",
+        "type": "unit",
+        "unit": "echo",
+        "input": {
+          "message": "${params.message}"
+        },
+        "position": { "x": 200, "y": 100 }
+      },
+      {
+        "id": "done",
+        "type": "return",
+        "values": {
+          "result": "${steps.echo_step.output.message}"
+        },
+        "position": { "x": 400, "y": 100 }
+      }
+    ],
+    "edges": [
+      { "source": "start", "target": "echo_step" },
+      { "source": "echo_step", "target": "done" }
+    ]
+  }
+}

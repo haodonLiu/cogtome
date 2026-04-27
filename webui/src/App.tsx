@@ -1,10 +1,11 @@
 import { HashRouter, Routes, Route } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { StructureList } from './components/StructureList';
-import { StructureEditor } from './components/StructureEditor';
+import { StructureEditor } from './components/editors/StructureEditor';
 import { MotifList } from './components/MotifList';
 import { MotifViewer } from './components/MotifViewer';
 import { MotifEditor } from './components/editors/MotifEditor';
+import { UnitList } from './components/UnitList';
 import { UnitEditor } from './components/editors/UnitEditor';
 
 function App() {
@@ -19,6 +20,7 @@ function App() {
           <Route path="/motifs" element={<MotifList />} />
           <Route path="/motifs/:name" element={<MotifViewer />} />
           <Route path="/motifs/:name/edit" element={<MotifEditor />} />
+          <Route path="/units" element={<UnitList />} />
           <Route path="/units/:name" element={<UnitEditor />} />
         </Routes>
       </Layout>
