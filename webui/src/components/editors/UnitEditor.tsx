@@ -192,7 +192,7 @@ export function UnitEditor() {
   const handleTest = async () => {
     if (!name) return;
     try {
-      const res = await fetch('/api/run', {
+      const res = await fetch('/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'unit', name, input: JSON.parse(testInput) }),

@@ -59,69 +59,45 @@ export function ChatAssistant({ context }: ChatAssistantProps) {
   };
 
   return (
-    <div style={{
-      background: '#0f0f1a',
-      borderTop: '1px solid #3b3b5c',
-      display: 'flex',
-      flexDirection: 'column',
-      height: 300,
-      fontFamily: 'monospace',
-    }}>
+    <div className="assistant-panel">
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', padding: '8px 16px', borderBottom: '1px solid #3b3b5c' }}>
-        <span style={{ color: '#7c3aed', fontSize: 14 }}>🤖</span>
-        <span style={{ color: '#e2e8f0', marginLeft: 8, fontSize: 13 }}>Assistant</span>
+      <div className="assistant-header">
+        <span className="assistant-icon">🤖</span>
+        <span className="assistant-title">Assistant</span>
       </div>
 
       {/* Messages */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
+      <div className="assistant-messages">
         {messages.length === 0 && (
-          <div style={{ color: '#64748b', fontSize: 12 }}>
+          <div className="assistant-empty">
             Ask me about editing this {context?.type || 'resource'}.
           </div>
         )}
         {messages.map((msg, i) => (
-          <div key={i} style={{ marginBottom: 12 }}>
-            <div style={{ color: msg.role === 'user' ? '#7c3aed' : '#22c55e', fontSize: 11, marginBottom: 2 }}>
+          <div key={i} className="assistant-message">
+            <div className={`assistant-role assistant-role--${msg.role}`}>
               {msg.role === 'user' ? 'You' : 'Assistant'}
             </div>
-            <div style={{ color: '#e2e8f0', fontSize: 13, whiteSpace: 'pre-wrap' }}>{msg.content}</div>
+            <div className="assistant-content">{msg.content}</div>
           </div>
         ))}
-        {loading && <div style={{ color: '#64748b', fontSize: 12 }}>Thinking...</div>}
+        {loading && <div className="assistant-loading">Thinking...</div>}
         <div ref={bottomRef} />
       </div>
 
       {/* Input */}
-      <div style={{ display: 'flex', gap: 8, padding: 12, borderTop: '1px solid #3b3b5c' }}>
+      <div className="assistant-input-area">
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSend()}
           placeholder={`Ask about ${context?.type || 'this'}...`}
-          style={{
-            flex: 1,
-            background: '#1a1a2e',
-            border: '1px solid #3b3b5c',
-            borderRadius: 4,
-            padding: '8px 12px',
-            color: '#e2e8f0',
-            fontFamily: 'monospace',
-            fontSize: 13,
-          }}
+          className="assistant-input"
         />
         <button
           onClick={handleSend}
           disabled={loading}
-          style={{
-            background: '#7c3aed',
-            color: '#fff',
-            border: 'none',
-            padding: '8px 16px',
-            borderRadius: 4,
-            cursor: loading ? 'not-allowed' : 'pointer',
-            opacity: loading ? 0.5 : 1,
-          }}
+          className="btn-primary assistant-send-btn"
         >
           Send
         </button>
