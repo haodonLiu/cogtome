@@ -7,3 +7,4 @@ export { Card } from './Card';
 export { EmptyState } from './EmptyState';
 export { ErrorBanner } from './ErrorBanner';
 export { FormField } from './FormField';
+export { Select } from './Select';
