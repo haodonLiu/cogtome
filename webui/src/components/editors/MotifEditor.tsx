@@ -8,6 +8,7 @@ import {
   Connection,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import { Button } from '../ui';
 import { nodeTypes } from '../graph/nodes';
 import { BlockPalette } from '../graph/Palette';
 import { PropertyPanel } from './PropertyPanel';
@@ -175,40 +176,40 @@ export function MotifEditor() {
     <div className="editor-shell">
       {/* Toolbar */}
       <div className="editor-toolbar">
-        <button onClick={() => navigate(-1)} className="btn-secondary">← Back</button>
+        <Button variant="secondary" onClick={() => navigate(-1)}>← Back</Button>
         <h2 className="editor-title">Motif: {name}</h2>
         <div className="editor-toolbar-spacer" />
         <div className="editor-toolbar-group">
-          <button
+          <Button
+            variant={viewMode === 'graph' ? 'primary' : 'ghost'}
             onClick={() => setViewMode('graph')}
-            className={`editor-toolbar-btn ${viewMode === 'graph' ? 'active' : ''}`}
           >
             Graph
-          </button>
-          <button
+          </Button>
+          <Button
+            variant={viewMode === 'json' ? 'primary' : 'ghost'}
             onClick={() => setViewMode('json')}
-            className={`editor-toolbar-btn ${viewMode === 'json' ? 'active' : ''}`}
           >
             JSON
-          </button>
+          </Button>
         </div>
-        <button onClick={handleSave} className="btn-primary">Save</button>
-        <button
+        <Button variant="primary" onClick={handleSave}>Save</Button>
+        <Button
+          variant="secondary"
           onClick={() => {
             const layouted = autoLayout(nodes);
             setNodes(layouted);
           }}
-          className="btn-secondary"
         >
           Auto Layout
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost"
           onClick={() => setCollapsePalette(p => !p)}
-          className="btn-ghost"
           title={collapsePalette ? 'Show Palette' : 'Hide Palette'}
         >
           {collapsePalette ? '▶' : '◀'}
-        </button>
+        </Button>
       </div>
 
       {/* Body */}
