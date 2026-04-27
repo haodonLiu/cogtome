@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { BlockNode, BlockEdge } from '../../types';
+import { Button } from '../ui';
 
 interface PropertyPanelProps {
   selectedNode: BlockNode | null;
@@ -112,12 +113,9 @@ export function PropertyPanel({
           </div>
         </div>
         <div className="panel-footer">
-          <button
-            className="btn-danger"
-            onClick={() => onDeleteEdge(selectedEdge.id)}
-          >
+          <Button variant="danger" onClick={() => onDeleteEdge(selectedEdge.id)}>
             Delete Edge
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -243,12 +241,9 @@ export function PropertyPanel({
       )}
 
       <div className="panel-footer">
-        <button
-          className="btn-danger"
-          onClick={() => onDeleteNode(id)}
-        >
+        <Button variant="danger" onClick={() => onDeleteNode(id)}>
           Delete Node
-        </button>
+        </Button>
       </div>
     </div>
   );
