@@ -4,3 +4,4 @@ export { Textarea } from './Textarea';
 export { Badge } from './Badge';
 export { Spinner } from './Spinner';
 export { Card } from './Card';
+export { EmptyState } from './EmptyState';
