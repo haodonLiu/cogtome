@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getUnit, saveUnit } from '../../api/client';
 import { ChatAssistant } from './ChatAssistant';
+import { Button } from '../ui';
 
 export interface UnitTemplate {
   id: string;
@@ -235,7 +236,7 @@ export function UnitEditor() {
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h3 className="modal-title">Select Template</h3>
-              <button onClick={() => setShowTemplateModal(false)} className="modal-close">×</button>
+              <Button variant="ghost" onClick={() => setShowTemplateModal(false)} style={{ fontSize: '20px', padding: '0 8px' }}>×</Button>
             </div>
             <div className="template-grid">
               {allTemplates.map((template) => (
@@ -262,7 +263,7 @@ export function UnitEditor() {
               ))}
             </div>
             <div className="modal-footer">
-              <button onClick={() => setShowTemplateModal(false)} className="btn-secondary">Cancel</button>
+              <Button variant="secondary" onClick={() => setShowTemplateModal(false)}>Cancel</Button>
             </div>
           </div>
         </div>
@@ -270,14 +271,14 @@ export function UnitEditor() {
 
       {/* Toolbar */}
       <div className="editor-toolbar">
-        <button onClick={() => navigate('/units')} className="btn-secondary">← Back</button>
+        <Button variant="secondary" onClick={() => navigate('/units')}>← Back</Button>
         <h2 className="editor-title">Unit: {name}</h2>
         <div className="editor-toolbar-spacer" />
-        <button onClick={() => setShowTemplateModal(true)} className="btn-secondary">Templates</button>
-        <button onClick={() => handleSaveTemplate({})} className="btn-secondary">Save Template</button>
-        <button onClick={handleSave} disabled={saving} className="btn-primary">
+        <Button variant="secondary" onClick={() => setShowTemplateModal(true)}>Templates</Button>
+        <Button variant="secondary" onClick={() => handleSaveTemplate({})}>Save Template</Button>
+        <Button variant="primary" onClick={handleSave} disabled={saving}>
           {saving ? 'Saving...' : 'Save'}
-        </button>
+        </Button>
       </div>
 
       {/* Main content */}
@@ -353,9 +354,9 @@ export function UnitEditor() {
               onChange={(e) => setTestInput(e.target.value)}
               className="input textarea"
             />
-            <button onClick={handleTest} className="btn-primary btn-run">
+            <Button variant="primary" onClick={handleTest}>
               ▶ Run Test
-            </button>
+            </Button>
           </div>
 
           <div className="card">
