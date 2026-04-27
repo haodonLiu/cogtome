@@ -12,6 +12,7 @@ import '@xyflow/react/dist/style.css';
 import { nodeTypes } from '../graph/nodes';
 import { BlockPalette } from '../graph/Palette';
 import { PropertyPanel } from './PropertyPanel';
+import { Button } from '../ui';
 import { getStructure, saveStructure, listMotifs } from '../../api/client';
 import { BlockNode, BlockEdge, BlockType, MotifInfo } from '../../types/index';
 import { autoLayout } from '../graph/graphUtils';
@@ -143,26 +144,25 @@ export function StructureEditor() {
     <div className="editor-shell">
       {/* Toolbar */}
       <div className="editor-toolbar">
-        <button onClick={() => navigate(-1)} className="btn-secondary">← Back</button>
+        <Button variant="secondary" onClick={() => navigate(-1)}>← Back</Button>
         <h2 className="editor-title">Structure: {name}</h2>
         <div className="editor-toolbar-spacer" />
-        <button onClick={handleSave} className="btn-primary">Save</button>
-        <button
+        <Button variant="primary" onClick={handleSave}>Save</Button>
+        <Button variant="secondary"
           onClick={() => {
             const layouted = autoLayout(nodes as BlockNode[]);
             setNodes(layouted.map(toRFNode) as any);
           }}
-          className="btn-secondary"
         >
           Auto Layout
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost"
           onClick={() => setCollapsePalette(p => !p)}
-          className="btn-ghost"
           title={collapsePalette ? 'Show Palette' : 'Hide Palette'}
         >
           {collapsePalette ? '▶' : '◀'}
-        </button>
+        </Button>
       </div>
 
       {/* Body */}
