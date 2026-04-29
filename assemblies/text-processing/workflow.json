@@ -1,0 +1,36 @@
+{
+  "name": "text-processing",
+  "type": "motif",
+  "version": "2.0",
+  "required_units": ["text-uppercase", "text-reverse"],
+  "graph": {
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "position": { "x": 0, "y": 100 }
+      },
+      {
+        "id": "upper",
+        "type": "unit",
+        "unit": "text-uppercase",
+        "input": {
+          "text": "${params.text}"
+        },
+        "position": { "x": 200, "y": 100 }
+      },
+      {
+        "id": "done",
+        "type": "return",
+        "values": {
+          "result": "${steps.upper.output.result}"
+        },
+        "position": { "x": 400, "y": 100 }
+      }
+    ],
+    "edges": [
+      { "source": "start", "target": "upper" },
+      { "source": "upper", "target": "done" }
+    ]
+  }
+}

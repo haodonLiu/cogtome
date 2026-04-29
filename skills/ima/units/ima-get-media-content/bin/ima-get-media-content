@@ -1,0 +1,114 @@
+#!/bin/bash
+set -e
+
+input_data=$(cat)
+
+KB_ID=$(echo "$input_data" | node -e "
+  const fs = require('fs');
+  const input = fs.readFileSync(0, 'utf8');
+  const data = JSON.parse(input);
+  const kb = data.params ? data.params.knowledge_base_id : data.knowledge_base_id;
+  process.stdout.write(kb || '');
+")
+
+URL=$(echo "$input_data" | node -e "
+  const fs = require('fs');
+  const input = fs.readFileSync(0, 'utf8');
+  const data = JSON.parse(input);
+  const u = data.params ? data.params.url : data.url;
+  process.stdout.write(u || '');
+")
+
+if [ -z "$KB_ID" ]; then
+  echo "Error: knowledge_base_id is required" >&2
+  exit 1
+fi
+
+API_SCRIPT="$(dirname "$0")/../../../../ima_api.cjs"
+
+# Search for the media by URL
+SEARCH_BODY="{\"query\": \"$URL\", \"knowledge_base_id\": \"$KB_ID\", \"cursor\": \"\", \"limit\": 10}"
+
+SEARCH_RESP=$(node "$API_SCRIPT" "openapi/wiki/v1/search_knowledge" "$SEARCH_BODY" 2>&1) || {
+  echo "Search failed: $SEARCH_RESP" >&2
+  exit 1
+}
+
+echo "$SEARCH_RESP" | node -e "
+  const fs = require('fs');
+  const data = JSON.parse(fs.readFileSync(0, 'utf8'));
+  if (data.code !== 0) {
+    console.error('Search error: ' + data.msg);
+    process.exit(1);
+  }
+  const list = data.data.info_list || [];
+  // Find the one matching the URL
+  const matched = list.find(item => item.title && item.title.includes('mp.weixin.qq.com') || item.media_id);
+  if (matched) {
+    console.log(JSON.stringify({ media_id: matched.media_id, title: matched.title }));
+  } else {
+    console.log(JSON.stringify({ media_id: '', title: '', error: 'not found in knowledge base' }));
+  }
+" > /tmp/ima_media_result.json
+
+MEDIA_ID=$(cat /tmp/ima_media_result.json | node -e "
+  const fs = require('fs');
+  const data = JSON.parse(fs.readFileSync(0, 'utf8'));
+  process.stdout.write(data.media_id || '');
+")
+
+if [ -z "$MEDIA_ID" ]; then
+  # Try adding the URL first
+  ADD_BODY="{\"knowledge_base_id\": \"$KB_ID\", \"urls\": [\"$URL\"]}"
+  ADD_RESP=$(node "$API_SCRIPT" "openapi/wiki/v1/import_urls" "$ADD_BODY" 2>&1) || {
+    echo "Add URL failed: $ADD_RESP" >&2
+    exit 1
+  }
+  
+  MEDIA_ID=$(echo "$ADD_RESP" | node -e "
+    const fs = require('fs');
+    const data = JSON.parse(fs.readFileSync(0, 'utf8'));
+    const results = data.data && data.data.results || {};
+    for (const [url, info] of Object.entries(results)) {
+      if (info.ret_code === 0) {
+        process.stdout.write(info.media_id || '');
+      }
+    }
+    process.stdout.write('');
+  ")
+fi
+
+if [ -z "$MEDIA_ID" ]; then
+  echo "Error: could not find or create media" >&2
+  exit 1
+fi
+
+# Get media info to retrieve content URL
+INFO_BODY="{\"media_id\": \"$MEDIA_ID\"}"
+INFO_RESP=$(node "$API_SCRIPT" "openapi/wiki/v1/get_media_info" "$INFO_BODY" 2>&1) || {
+  echo "Get media info failed: $INFO_RESP" >&2
+  exit 1
+}
+
+echo "$INFO_RESP" | node -e "
+  const fs = require('fs');
+  const data = JSON.parse(fs.readFileSync(0, 'utf8'));
+  if (data.code !== 0) {
+    console.error('Get media info error: ' + data.msg);
+    process.exit(1);
+  }
+  const info = data.data || {};
+  const mediaType = info.media_type;
+  let content = '';
+  let contentUrl = '';
+  
+  if (info.url_info) {
+    contentUrl = info.url_info.url || '';
+    // Try to fetch the actual content if it's a URL type
+    if (contentUrl) {
+      console.log(JSON.stringify({ media_id: '$MEDIA_ID', content_url: contentUrl, media_type: mediaType }));
+    }
+  } else {
+    console.log(JSON.stringify({ media_id: '$MEDIA_ID', content_url: '', media_type: mediaType }));
+  }
+"

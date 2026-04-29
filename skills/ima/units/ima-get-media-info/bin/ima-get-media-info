@@ -1,0 +1,19 @@
+#!/bin/bash
+set -e
+
+input_data=$(cat)
+
+API_SCRIPT="$(dirname "$0")/../../../ima_api.cjs"
+
+MEDIA_ID=$(echo "$input" | node -e "
+  const fs = require('fs');
+  const input = fs.readFileSync(0, 'utf8');
+  const data = JSON.parse(input);
+  process.stdout.write(data.media_id || '');
+")
+
+BODY="{\"media_id\": \"$MEDIA_ID\"}"
+
+RESPONSE=$(node "$API_SCRIPT" "openapi/wiki/v1/get_media_info" "$BODY" 2>&1)
+
+echo "$RESPONSE"

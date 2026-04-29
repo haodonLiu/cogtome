@@ -1,0 +1,49 @@
+{
+  "name": "ima-list-kb",
+  "type": "structure",
+  "motifs": [{ "name": "ima-list-knowledge-bases" }],
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "description": "Action: list (all) or search",
+        "default": "list"
+      },
+      "query": {
+        "type": "string",
+        "description": "Search query (for search action)"
+      },
+      "cursor": {
+        "type": "string",
+        "description": "Pagination cursor"
+      },
+      "limit": {
+        "type": "integer",
+        "description": "Results per page (1-20)",
+        "default": 20
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "knowledge_bases": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "name": { "type": "string" },
+            "cover_url": { "type": "string" }
+          }
+        }
+      },
+      "is_end": { "type": "boolean" },
+      "next_cursor": { "type": "string" }
+    }
+  },
+  "resources": {
+    "units": ["ima-list-knowledge-bases"]
+  }
+}

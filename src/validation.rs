@@ -1,9 +1,11 @@
 use crate::discovery::SkillsDir;
-use crate::engine::{Graph, GraphValidationError, MotifManifestV2, MotifRef, StructureManifest};
+use crate::engine::{MotifManifestV2, StructureManifest};
 use crate::error::{CogtomeError, ErrorCode, ErrorLayer};
 use anyhow::{Context, Result};
 use serde_json::Value;
 use std::path::Path;
+#[allow(unused_imports)]
+use crate::engine::{Graph, MotifRef, Node, Edge};
 
 /// Validates input against a JSON Schema.
 /// Returns Ok(()) on success, or Err with detailed validation error.
@@ -174,6 +176,7 @@ pub fn validate_manifest_file(path: &Path, skills: &SkillsDir) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::{Graph, MotifRef, Node, Edge};
     use std::collections::HashMap;
 
     fn make_test_motif_valid() -> MotifManifestV2 {
@@ -185,15 +188,15 @@ mod tests {
             required_units: vec![],
             graph: Graph {
                 nodes: vec![
-                    crate::engine::Node::Start { id: "start".to_string(), position: None },
-                    crate::engine::Node::Return {
+                    Node::Start { id: "start".to_string(), position: None },
+                    Node::Return {
                         id: "ret".to_string(),
                         values: HashMap::new(),
                         position: None,
                     },
                 ],
                 edges: vec![
-                    crate::engine::Edge {
+                    Edge {
                         id: None,
                         source: "start".to_string(),
                         target: "ret".to_string(),

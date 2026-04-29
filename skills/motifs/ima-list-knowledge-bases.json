@@ -1,0 +1,41 @@
+{
+  "name": "ima-list-knowledge-bases",
+  "type": "motif",
+  "version": "2.0",
+  "required_units": ["ima-list-knowledge-bases"],
+  "graph": {
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "position": { "x": 0, "y": 100 }
+      },
+      {
+        "id": "list",
+        "type": "unit",
+        "unit": "ima-list-knowledge-bases",
+        "input": {
+          "action": "list",
+          "query": "",
+          "cursor": "",
+          "limit": "20"
+        },
+        "position": { "x": 200, "y": 100 }
+      },
+      {
+        "id": "done",
+        "type": "return",
+        "values": {
+          "knowledge_bases": "${steps.list.output.knowledge_bases}",
+          "is_end": "${steps.list.output.is_end}",
+          "next_cursor": "${steps.list.output.next_cursor}"
+        },
+        "position": { "x": 400, "y": 100 }
+      }
+    ],
+    "edges": [
+      { "source": "start", "target": "list" },
+      { "source": "list", "target": "done" }
+    ]
+  }
+}

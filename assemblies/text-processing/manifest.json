@@ -1,0 +1,23 @@
+{
+  "name": "text-processing",
+  "description": "Transform text content with various operations like uppercase, reverse, etc.",
+  "version": "1.0.0",
+  "tags": ["text", "productivity"],
+  "category": "text",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "text": { "type": "string" },
+      "operation": { "type": "string", "enum": ["uppercase", "reverse"] }
+    },
+    "required": ["text", "operation"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "result": { "type": "string" }
+    }
+  },
+  "units": ["text-uppercase", "text-reverse"],
+  "workflow": "./workflow.json"
+}

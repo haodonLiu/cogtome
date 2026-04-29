@@ -1,12 +1,13 @@
 mod api;
+mod assembly;
 mod config;
 mod context;
 mod discovery;
 mod engine;
 mod error;
 mod metrics;
+mod mcp_server;
 mod pack;
-mod python_motif;
 mod services;
 mod shutdown;
 mod validation;
@@ -15,10 +16,11 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use config::CogtomeConfig;
 use discovery::{extract_first_structure, SkillsDir};
-use engine::{GraphMotifEngine, StructureExecutor, UnitConcurrency, UnitRunner};
+use engine::{GraphMotifEngine, McpBridgeInput, McpBridgeUnit, StructureExecutor, UnitConcurrency, UnitRunner};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use tracing::info;
 
 #[derive(Parser)]
 #[command(name = "cogtome")]
@@ -73,6 +75,36 @@ enum Commands {
     /// 验证 Motif 或 Structure manifest 文件
     Validate {
         path: String,
+    },
+    /// 通过 MCP Bridge 运行 MCP Server 工具
+    McpBridge {
+        /// MCP Server 启动命令，如 "npx -y @modelcontextprotocol/server-filesystem /tmp"
+        #[arg(long)]
+        server: String,
+        /// 要调用的工具名，如 "read_text_file"
+        #[arg(long)]
+        tool: String,
+        /// 工具参数（JSON 格式）
+        #[arg(long, default_value = "{}")]
+        args: String,
+        /// 初始化超时（秒）
+        #[arg(long, default_value = "30")]
+        init_timeout: u64,
+        /// 请求超时（秒）
+        #[arg(long, default_value = "60")]
+        request_timeout: u64,
+    },
+    /// 启动 MCP Server（stdio 模式）
+    McpServer {
+        /// Assemblies 目录
+        #[arg(long, default_value = "./assemblies")]
+        assemblies: String,
+        /// Units 目录
+        #[arg(long, default_value = "./units")]
+        units: String,
+        /// 执行超时（秒）
+        #[arg(long, default_value = "30")]
+        timeout: u64,
     },
 }
 
@@ -390,6 +422,48 @@ async fn main() -> Result<()> {
                 anyhow::bail!("File not found: {}", path.display());
             }
             validation::validate_manifest_file(&path, &skills)?;
+        }
+
+        // ------------------------------------------------------------------
+        // MCP Bridge：运行 MCP Server 工具
+        // ------------------------------------------------------------------
+        Commands::McpBridge { server, tool, args, init_timeout, request_timeout } => {
+            let args_value: Value = serde_json::from_str(&args).map_err(|e| anyhow::anyhow!("Invalid args JSON: {}", e))?;
+            let args_map = if let Value::Object(map) = args_value {
+                map.into_iter().collect()
+            } else {
+                anyhow::bail!("args must be a JSON object");
+            };
+
+            let input = McpBridgeInput {
+                server,
+                tool,
+                args: args_map,
+                init_timeout,
+                request_timeout,
+            };
+
+            let result = McpBridgeUnit::execute(input).await?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+
+        // ------------------------------------------------------------------
+        // MCP Server：启动 MCP Server（stdio 模式）
+        // ------------------------------------------------------------------
+        Commands::McpServer { assemblies, units, timeout } => {
+            use mcp_server::run_server;
+
+            let assemblies_dir = PathBuf::from(assemblies);
+            let units_dir = PathBuf::from(units);
+
+            info!(
+                assemblies = %assemblies_dir.display(),
+                units = %units_dir.display(),
+                timeout = timeout,
+                "starting MCP server"
+            );
+
+            run_server(assemblies_dir, units_dir, timeout)?;
         }
     }
 

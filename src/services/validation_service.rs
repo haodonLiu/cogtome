@@ -2,9 +2,8 @@
 //! Wraps validation.rs functions for HTTP API use.
 
 use crate::discovery::SkillsDir;
-use crate::engine::{Graph, GraphValidationError, MotifManifestV2, StructureManifest};
+use crate::engine::{MotifManifestV2, StructureManifest};
 use anyhow::Result;
-use std::path::Path;
 
 /// Validation result with details.
 #[derive(Debug, Clone, serde::Serialize)]

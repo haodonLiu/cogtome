@@ -1,0 +1,20 @@
+#!/bin/bash
+set -e
+
+input_data=$(cat)
+
+API_SCRIPT="$(dirname "$0")/../../../ima_api.cjs"
+
+KB_IDS=$(echo "$input" | node -e "
+  const fs = require('fs');
+  const input = fs.readFileSync(0, 'utf8');
+  const data = JSON.parse(input);
+  const ids = data.knowledge_base_ids || [];
+  process.stdout.write(JSON.stringify(ids));
+")
+
+BODY="{\"ids\": $KB_IDS}"
+
+RESPONSE=$(node "$API_SCRIPT" "openapi/wiki/v1/get_knowledge_base" "$BODY" 2>&1)
+
+echo "$RESPONSE"

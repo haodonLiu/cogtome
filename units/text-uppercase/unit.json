@@ -1,0 +1,17 @@
+{
+  "name": "text-uppercase",
+  "entry": "bin/text-uppercase",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "text": { "type": "string" }
+    },
+    "required": ["text"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "result": { "type": "string" }
+    }
+  }
+}

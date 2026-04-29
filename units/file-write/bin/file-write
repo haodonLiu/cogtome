@@ -1,0 +1,40 @@
+#!/bin/bash
+# Unit: file-write
+# Wraps OpenClaw write tool
+# Input:  {"path": "string", "content": "string", "create_dir?: boolean}
+# Output: {"path": "string", "bytes": number, "created": boolean}
+
+read -r input
+
+path=$(echo "$input" | grep -o '"path"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/"path"[[:space:]]*:[[:space:]]*"//;s/"$//')
+content=$(echo "$input" | grep -o '"content"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/"content"[[:space:]]*:[[:space:]]*"//;s/"$//')
+create_dir=$(echo "$input" | grep -o '"create_dir"[[:space:]]*:[[:space:]]*\(true\|false\)' | grep -o 'true\|false')
+
+if [ -z "$path" ]; then
+  echo '{"error": "missing path field"}' >&2
+  exit 1
+fi
+
+if [ -z "$content" ]; then
+  echo '{"error": "missing content field"}' >&2
+  exit 1
+fi
+
+# Create parent directory if requested
+if [ "$create_dir" = "true" ]; then
+  mkdir -p "$(dirname "$path")"
+fi
+
+# Check if file exists
+if [ -f "$path" ]; then
+  created=false
+else
+  created=true
+fi
+
+# Write content
+printf '%s' "$content" > "$path"
+
+bytes=$(wc -c < "$path" 2>/dev/null || echo 0)
+
+echo "{\"path\": \"$path\", \"bytes\": $bytes, \"created\": $created}"

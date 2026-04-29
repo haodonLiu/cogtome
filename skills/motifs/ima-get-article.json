@@ -1,0 +1,48 @@
+{
+  "name": "ima-get-article",
+  "type": "motif",
+  "version": "2.0",
+  "required_units": ["ima-add-url", "ima-search-knowledge"],
+  "graph": {
+    "nodes": [
+      {"id": "start", "type": "start", "position": {"x": 0, "y": 100}},
+      {
+        "id": "add_url",
+        "type": "unit",
+        "unit": "ima-add-url",
+        "input": {
+          "knowledge_base_id": "${params.knowledge_base_id}",
+          "folder_id": "${params.folder_id}",
+          "urls": "${params.urls}"
+        },
+        "position": {"x": 200, "y": 100}
+      },
+      {
+        "id": "search",
+        "type": "unit",
+        "unit": "ima-search-knowledge",
+        "input": {
+          "query": "${params.search_query}",
+          "knowledge_base_id": "${params.knowledge_base_id}",
+          "cursor": "",
+          "limit": "10"
+        },
+        "position": {"x": 400, "y": 100}
+      },
+      {
+        "id": "done",
+        "type": "return",
+        "values": {
+          "add_results": "${steps.add_url.output.results}",
+          "articles": "${steps.search.output.info_list}"
+        },
+        "position": {"x": 600, "y": 100}
+      }
+    ],
+    "edges": [
+      {"source": "start", "target": "add_url"},
+      {"source": "add_url", "target": "search"},
+      {"source": "search", "target": "done"}
+    ]
+  }
+}

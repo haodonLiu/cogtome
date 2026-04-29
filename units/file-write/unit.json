@@ -1,0 +1,21 @@
+{
+  "name": "text-uppercase",
+  "entry": "./bin/file-write",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "path": { "type": "string" },
+      "content": { "type": "string" },
+      "create_dir": { "type": "boolean" }
+    },
+    "required": ["path", "content"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "path": { "type": "string" },
+      "bytes": { "type": "number" },
+      "created": { "type": "boolean" }
+    }
+  }
+}

@@ -30,10 +30,22 @@ impl Drop for RunningTaskGuard {
 
 #[derive(Debug, Clone)]
 pub struct UnitConcurrency {
-    pub max_global: Option<u32>,
+    /// Max concurrent executions. -1 means unlimited (u32::MAX permits).
+    pub max_global: Option<i32>,
     #[allow(dead_code)]
-    pub max_per_host: Option<u32>,
+    pub max_per_host: Option<i32>,
     pub resource_key: Option<String>,
+}
+
+impl UnitConcurrency {
+    /// Returns the semaphore permits, or u32::MAX for unlimited (-1)
+    pub fn permits(&self) -> usize {
+        match self.max_global {
+            Some(-1) => usize::MAX,
+            Some(n) => n as usize,
+            None => 1,
+        }
+    }
 }
 
 // ============================================================================
@@ -59,9 +71,8 @@ impl UnitRunner {
         let mut resource_semaphores: HashMap<String, Arc<Semaphore>> = HashMap::new();
         for (_unit_name, config) in &concurrency_config {
             if let Some(ref key) = config.resource_key {
-                // Use max_global as semaphore capacity, default to 1 if not set
-                let permits = config.max_global.unwrap_or(1);
-                resource_semaphores.insert(key.clone(), Arc::new(Semaphore::new(permits as usize)));
+                // Use permits() which handles -1 (unlimited) and defaults to 1
+                resource_semaphores.insert(key.clone(), Arc::new(Semaphore::new(config.permits())));
             }
         }
 

@@ -1,0 +1,44 @@
+{
+  "name": "ima-get-article",
+  "type": "structure",
+  "motifs": [{"name": "ima-get-article"}],
+  "input_schema": {
+    "type": "object",
+    "required": ["urls", "knowledge_base_id"],
+    "properties": {
+      "urls": {
+        "type": "array",
+        "items": {"type": "string"},
+        "description": "URLs to fetch (WeChat article URLs)"
+      },
+      "knowledge_base_id": {
+        "type": "string",
+        "description": "Knowledge base ID"
+      },
+      "folder_id": {
+        "type": "string",
+        "description": "Folder ID (optional, defaults to root)"
+      },
+      "search_query": {
+        "type": "string",
+        "description": "Search query to find articles after adding"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "add_results": {
+        "type": "array",
+        "description": "Results of adding URLs to knowledge base"
+      },
+      "articles": {
+        "type": "array",
+        "description": "Articles found in knowledge base"
+      }
+    }
+  },
+  "resources": {
+    "units": ["ima-add-url", "ima-search-knowledge"]
+  }
+}

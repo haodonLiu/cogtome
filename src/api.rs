@@ -4,9 +4,8 @@ use crate::error::CogtomeError;
 use crate::metrics;
 use crate::services::{
     list_motifs as service_list_motifs, list_structures as service_list_structures,
-    list_units as service_list_units, read_structure as service_read_structure,
-    save_unit as service_save_unit, validate_motif_by_name as service_validate_motif,
-    validate_structure_by_name as service_validate_structure, write_structure as service_write_structure,
+    list_units as service_list_units, save_unit as service_save_unit,
+    validate_motif_by_name as service_validate_motif, validate_structure_by_name as service_validate_structure,
     MotifInfo, StructureInfo, UnitConfig, UnitInfo,
 };
 use axum::{
@@ -24,7 +23,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
-use tower::ServiceExt;
 use tower_http::services::ServeDir;
 use tracing::{error, info};
 
@@ -421,8 +419,9 @@ async fn put_structure_handler(
     let dir_path = state.skills.root.join(&state.skills.structures_subdir).join(&name);
     let file_path = dir_path.join("manifest.json");
 
-    service_write_structure(&file_path, &manifest)
-        .map_err(|e| CogtomeError::layer_runtime().with_hint(format!("Failed to write: {}", e)))?;
+    std::fs::create_dir_all(&dir_path).map_err(|e| anyhow::anyhow!("Failed to create dir: {}", e))?;
+    let content = serde_json::to_string_pretty(&manifest).map_err(|e| anyhow::anyhow!("Failed to serialize: {}", e))?;
+    std::fs::write(&file_path, content).map_err(|e| anyhow::anyhow!("Failed to write: {}", e))?;
 
     Ok(Json(serde_json::json!({ "message": "Structure saved", "path": file_path })))
 }
@@ -526,7 +525,7 @@ async fn list_units_handler(
 }
 
 async fn get_unit_handler(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     Path(name): Path<String>,
 ) -> Result<Json<serde_json::Value>, CogtomeError> {
     validate_name(&name)?;

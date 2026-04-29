@@ -1,0 +1,43 @@
+{
+  "name": "ima-add-url",
+  "type": "structure",
+  "motifs": [{ "name": "ima-add-url" }],
+  "input_schema": {
+    "type": "object",
+    "required": ["urls", "knowledge_base_id"],
+    "properties": {
+      "urls": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "URLs to add (1-10), supports WeChat articles (mp.weixin.qq.com)"
+      },
+      "knowledge_base_id": {
+        "type": "string",
+        "description": "Knowledge base ID"
+      },
+      "folder_id": {
+        "type": "string",
+        "description": "Folder ID (optional, defaults to root)"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "results": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "url": { "type": "string" },
+            "ret_code": { "type": "integer" },
+            "media_id": { "type": "string" }
+          }
+        }
+      }
+    }
+  },
+  "resources": {
+    "units": ["ima-add-url"]
+  }
+}

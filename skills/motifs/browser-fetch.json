@@ -1,0 +1,37 @@
+{
+  "name": "browser-fetch",
+  "type": "motif",
+  "version": "2.0",
+  "required_units": ["camoufox-fetch"],
+  "graph": {
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "position": { "x": 0, "y": 100 }
+      },
+      {
+        "id": "fetch",
+        "type": "unit",
+        "unit": "camoufox-fetch",
+        "input": {
+          "url": "${params.url}"
+        },
+        "position": { "x": 200, "y": 100 }
+      },
+      {
+        "id": "done",
+        "type": "return",
+        "values": {
+          "url": "${steps.fetch.output.url}",
+          "content": "${steps.fetch.output.content}"
+        },
+        "position": { "x": 400, "y": 100 }
+      }
+    ],
+    "edges": [
+      { "source": "start", "target": "fetch" },
+      { "source": "fetch", "target": "done" }
+    ]
+  }
+}

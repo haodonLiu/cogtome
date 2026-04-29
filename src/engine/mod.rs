@@ -1,20 +1,11 @@
-pub mod foreach;
 pub mod graph;
-pub mod motif_manifest;
+pub mod mcp_bridge;
 pub mod unit_runner;
 
-pub use foreach::{
-    emit_step_end, emit_step_start, execute_foreach_parallel, execute_foreach_serial,
-    execute_unit_with_error_handling, resolve_step_input,
-};
 #[allow(unused_imports)]
 pub use graph::{Edge, Graph, GraphValidationError, Node, Position};
-#[allow(unused_imports)]
-pub use motif_manifest::{
-    AggregateBlock, AggregateMode, BackoffStrategy, ErrorStrategy, FlowStep, ForeachBlock,
-    JoinConfig, RetryConfig, StepErrorStrategy,
-};
 pub use unit_runner::{UnitConcurrency, UnitRunner};
+pub use mcp_bridge::{McpBridgeInput, McpBridgeUnit};
 
 use crate::context::{ExecContext, StepResult};
 use crate::discovery::SkillsDir;
@@ -326,7 +317,7 @@ impl GraphMotifEngine {
     }
 
     fn evaluate_expression(expr: &str, ctx: &ExecContext) -> Result<Value> {
-        ctx.resolve_var(expr).ok_or_else(|| anyhow::anyhow!("Failed to evaluate: {}", expr))
+        Ok(ctx.resolve_var(expr).unwrap_or(Value::Null))
     }
 
     fn extract_return_output(graph: &Graph, ctx: &ExecContext) -> Result<Value> {

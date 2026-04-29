@@ -36,6 +36,8 @@ pub struct PathsConfig {
     pub units: Option<String>,
     pub motifs: Option<String>,
     pub structures: Option<String>,
+    #[serde(default)]
+    pub assemblies: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -62,8 +64,10 @@ impl Default for UnitDefaults {
 
 #[derive(Debug, Deserialize)]
 pub struct ConcurrencyConfig {
-    pub max_global: Option<u32>,
-    pub max_per_host: Option<u32>,
+    /// Max concurrent executions. -1 means unlimited.
+    pub max_global: Option<i32>,
+    #[allow(dead_code)]
+    pub max_per_host: Option<i32>,
     pub resource_key: Option<String>,
 }
 

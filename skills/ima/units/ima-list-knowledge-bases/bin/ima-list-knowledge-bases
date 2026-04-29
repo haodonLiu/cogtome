@@ -1,0 +1,79 @@
+#!/bin/bash
+LOG_DIR="/home/haodont/cogtome/skills/ima/units/ima-list-knowledge-bases/logs"
+LOG="$LOG_DIR/debug.log"
+mkdir -p "$LOG_DIR"
+
+echo "=== START $$ $(date) ===" >> "$LOG"
+echo "Args: $@" >> "$LOG"
+
+# Read ALL stdin into a variable (read entire content)
+input_data=$(cat)
+echo "STDIN_LEN: ${#input_data}" >> "$LOG"
+echo "STDIN: '$input_data'" >> "$LOG"
+
+if [ -z "$input_data" ]; then
+    echo "NO INPUT - exiting" >> "$LOG"
+    exit 1
+fi
+
+# Parse and process
+API_SCRIPT="$(dirname "$0")/../../../ima_api.cjs"
+
+ACTION=$(echo "$input_data" | node -e "
+  const fs = require('fs');
+  const input = fs.readFileSync(0, 'utf8');
+  const data = JSON.parse(input);
+  process.stdout.write(data.params ? (data.params.action || 'list') : (data.action || 'list'));
+")
+
+QUERY=$(echo "$input_data" | node -e "
+  const fs = require('fs');
+  const input = fs.readFileSync(0, 'utf8');
+  const data = JSON.parse(input);
+  const q = data.params ? data.params.query : data.query;
+  process.stdout.write(q != null ? String(q) : '');
+")
+
+CURSOR=$(echo "$input_data" | node -e "
+  const fs = require('fs');
+  const input = fs.readFileSync(0, 'utf8');
+  const data = JSON.parse(input);
+  const c = data.params ? data.params.cursor : data.cursor;
+  process.stdout.write(c != null ? String(c) : '');
+")
+
+LIMIT=$(echo "$input_data" | node -e "
+  const fs = require('fs');
+  const input = fs.readFileSync(0, 'utf8');
+  const data = JSON.parse(input);
+  const l = data.params ? data.params.limit : data.limit;
+  process.stdout.write(l != null ? String(l) : '20');
+")
+
+echo "PARAMS: action=$ACTION query=$QUERY cursor=$CURSOR limit=$LIMIT" >> "$LOG"
+
+BODY="{\"query\": \"$QUERY\", \"cursor\": \"$CURSOR\", \"limit\": $LIMIT}"
+
+RESPONSE=$(node "$API_SCRIPT" "openapi/wiki/v1/search_knowledge_base" "$BODY" 2>&1) || {
+  echo "API_FAILED: $RESPONSE" >> "$LOG"
+  exit 1
+}
+
+echo "API_OK" >> "$LOG"
+
+echo "$RESPONSE" | node -e "
+  const fs = require('fs');
+  const data = JSON.parse(fs.readFileSync(0, 'utf8'));
+  if (data.code !== 0) {
+    console.error('API error: ' + data.msg);
+    process.exit(1);
+  }
+  const result = {
+    knowledge_bases: data.data.info_list || [],
+    is_end: data.data.is_end,
+    next_cursor: data.data.next_cursor || ''
+  };
+  console.log(JSON.stringify(result));
+"
+
+echo "DONE" >> "$LOG"

@@ -1,0 +1,21 @@
+{
+  "name": "file-read",
+  "entry": "./bin/file-read",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "path": { "type": "string" },
+      "offset": { "type": "number" },
+      "limit": { "type": "number" }
+    },
+    "required": ["path"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "path": { "type": "string" },
+      "content": { "type": "string" },
+      "lines": { "type": "number" }
+    }
+  }
+}
