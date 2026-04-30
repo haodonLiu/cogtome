@@ -16,6 +16,7 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Instant;
 use tracing::{error, info, Instrument};
 
 // ============================================================================
@@ -161,13 +162,17 @@ impl GraphMotifEngine {
             .iter()
             .map(|(node_id, step)| {
                 let ok = step.exit_code == 0;
-                serde_json::json!({
+                let mut node = serde_json::json!({
                     "id": node_id,
                     "type": "unit",
                     "ok": ok,
                     "exit_code": step.exit_code,
                     "error": if ok { "" } else { "non-zero exit" }
-                })
+                });
+                if let Some(ms) = step.duration_ms {
+                    node["ms"] = serde_json::json!(ms);
+                }
+                node
             })
             .collect();
 
@@ -223,18 +228,20 @@ impl GraphMotifEngine {
 
             Node::Unit { id, unit, input, on_error, .. } => {
                 let resolved_input = Self::resolve_input(input, ctx)?;
+                let node_start = Instant::now();
                 let result = runner.call(unit, resolved_input, None).await;
+                let node_ms = node_start.elapsed().as_millis() as u64;
 
                 match result {
                     Ok((output, _exit_code)) => {
-                        Self::set_step_result(ctx, id.clone(), output, 0);
+                        Self::set_step_result(ctx, id.clone(), output, 0, Some(node_ms));
                         let next = Self::find_next(graph, node_id, None)?;
                         Box::pin(self.execute_node(graph, &next, runner, ctx)).await?;
                     }
                     Err(e) => {
                         match on_error {
                             Some(graph::OnErrorConfig { strategy: graph::ErrorStrategy::Continue, .. }) => {
-                                Self::set_step_result(ctx, id.clone(), serde_json::json!({ "__error": e.to_string() }), -1);
+                                Self::set_step_result(ctx, id.clone(), serde_json::json!({ "__error": e.to_string() }), -1, Some(node_ms));
                                 let next = Self::find_next(graph, node_id, None)?;
                                 Box::pin(self.execute_node(graph, &next, runner, ctx)).await?;
                             }
@@ -250,7 +257,7 @@ impl GraphMotifEngine {
             Node::If { id, condition, .. } => {
                 let condition_result = Self::evaluate_condition(condition, ctx)?;
                 let label = if condition_result { "true" } else { "false" };
-                Self::set_step_result(ctx, id.clone(), serde_json::json!({ "condition": condition_result }), 0);
+                Self::set_step_result(ctx, id.clone(), serde_json::json!({ "condition": condition_result }), 0, None);
                 let next = Self::find_next(graph, node_id, Some(label))?;
                 Box::pin(self.execute_node(graph, &next, runner, ctx)).await?;
             }
@@ -273,7 +280,7 @@ impl GraphMotifEngine {
                 if !matched {
                     anyhow::bail!("Match node '{}' no branch matched value '{}'", id, value_str);
                 }
-                Self::set_step_result(ctx, id.clone(), value, 0);
+                Self::set_step_result(ctx, id.clone(), value, 0, None);
             }
 
             Node::Foreach { id, over, as_var, max_iterations, subgraph, .. } => {
@@ -294,7 +301,7 @@ impl GraphMotifEngine {
                     results.push(Self::extract_return_output(subgraph, &sub_ctx)?);
                 }
 
-                Self::set_step_result(ctx, id.clone(), Value::Array(results), 0);
+                Self::set_step_result(ctx, id.clone(), Value::Array(results), 0, None);
                 let next = Self::find_next(graph, node_id, None)?;
                 Box::pin(self.execute_node(graph, &next, runner, ctx)).await?;
             }
@@ -311,7 +318,7 @@ impl GraphMotifEngine {
             }
 
             Node::Join { id, .. } => {
-                Self::set_step_result(ctx, id.clone(), serde_json::json!(null), 0);
+                Self::set_step_result(ctx, id.clone(), serde_json::json!(null), 0, None);
                 let next = Self::find_next(graph, node_id, None)?;
                 if !next.is_empty() {
                     Box::pin(self.execute_node(graph, &next, runner, ctx)).await?;
@@ -326,11 +333,11 @@ impl GraphMotifEngine {
                         (k.clone(), val)
                     })
                     .collect();
-                Self::set_step_result(ctx, id.clone(), Value::Object(resolved.into_iter().collect()), 0);
+                Self::set_step_result(ctx, id.clone(), Value::Object(resolved.into_iter().collect()), 0, None);
             }
 
             Node::MotifRef { id, motif, .. } => {
-                Self::set_step_result(ctx, id.clone(), serde_json::json!({ "motif": motif }), 0);
+                Self::set_step_result(ctx, id.clone(), serde_json::json!({ "motif": motif }), 0, None);
             }
 
             Node::Gate { id, message, timeout, on_timeout, .. } => {
@@ -372,11 +379,11 @@ impl GraphMotifEngine {
                 };
 
                 if confirmed {
-                    Self::set_step_result(ctx, id.clone(), serde_json::json!({ "approved": true }), 0);
+                    Self::set_step_result(ctx, id.clone(), serde_json::json!({ "approved": true }), 0, None);
                     let next = Self::find_next(graph, node_id, None)?;
                     Box::pin(self.execute_node(graph, &next, runner, ctx)).await?;
                 } else {
-                    Self::set_step_result(ctx, id.clone(), serde_json::json!({ "approved": false }), 0);
+                    Self::set_step_result(ctx, id.clone(), serde_json::json!({ "approved": false }), 0, None);
                     match on_timeout {
                         graph::GateTimeoutAction::Escalate => {
                             anyhow::bail!("Gate '{}' denied - escalation required", id);
@@ -392,11 +399,11 @@ impl GraphMotifEngine {
         Ok(())
     }
 
-    fn set_step_result(ctx: &mut ExecContext, id: String, output: Value, exit_code: i32) {
+    fn set_step_result(ctx: &mut ExecContext, id: String, output: Value, exit_code: i32, duration_ms: Option<u64>) {
         // Clone the current Arc, insert the new step, create new Arc
         let current = (*ctx.steps).clone();
         let mut new_steps: HashMap<String, StepResult> = current.into_iter().collect();
-        new_steps.insert(id, StepResult { output, exit_code });
+        new_steps.insert(id, StepResult { output, exit_code, duration_ms });
         ctx.steps = Arc::new(new_steps);
     }
 
