@@ -72,6 +72,8 @@ impl GraphMotifEngine {
             node_count = manifest.graph.nodes.len()
         );
 
+        let start_time = std::time::Instant::now();
+
         async move {
             // Validate graph before execution
             manifest.graph.validate().map_err(|e| {
@@ -81,15 +83,117 @@ impl GraphMotifEngine {
             let mut ctx = ExecContext::new(input);
             let start_id = Self::find_start_node(&manifest.graph)?;
 
-            self.execute_node(&manifest.graph, &start_id, runner, &mut ctx).await?;
+            let run_result = self.execute_node(&manifest.graph, &start_id, runner, &mut ctx).await;
 
-            // Extract return values
-            let result = Self::extract_return_output(&manifest.graph, &ctx)?;
+            // Extract return values (only if execution succeeded)
+            let result = match run_result {
+                Ok(()) => Self::extract_return_output(&manifest.graph, &ctx)?,
+                Err(e) => return Err(e),
+            };
+
             info!(motif = %manifest.name, result_keys = result.as_object().map(|o| o.len()).unwrap_or(0), "motif completed");
+
+            // Trace hook: log execution to ~/.cogtome/traces/
+            self.emit_trace(manifest.name.as_str(), start_time, &ctx, &result);
+
             Ok(result)
         }
         .instrument(span)
         .await
+    }
+
+    fn format_time(d: std::time::Duration) -> String {
+        let secs = d.as_secs();
+        let hours = (secs % 86400) / 3600;
+        let mins = (secs % 3600) / 60;
+        let seconds = secs % 60;
+        let days = secs / 86400;
+        let mut year = 1970 + (days / 365) as i64;
+        let mut remaining = (days % 365) as i64;
+        let is_leap = |y: i64| y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+        let days_in_yr = |y: i64| if is_leap(y) { 366 } else { 365 };
+        while remaining >= days_in_yr(year) {
+            remaining -= days_in_yr(year);
+            year += 1;
+        }
+        format!("{}d{}h:{:02}:{:02}", year, remaining, hours, mins)
+    }
+
+    fn format_date(d: std::time::Duration) -> String {
+        let secs = d.as_secs();
+        let days = secs / 86400;
+        let mut year = 1970 + (days / 365) as i64;
+        let mut remaining = (days % 365) as i64;
+        let is_leap = |y: i64| y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+        let days_in_yr = |y: i64| if is_leap(y) { 366 } else { 365 };
+        while remaining >= days_in_yr(year) {
+            remaining -= days_in_yr(year);
+            year += 1;
+        }
+        let days_in_month = |m: i64, y: i64| match m {
+            1|3|5|7|8|10|12 => 31,
+            4|6|9|11 => 30,
+            2 => if is_leap(y) { 29 } else { 28 },
+            _ => 30,
+        };
+        let mut month = 1;
+        while remaining >= days_in_month(month, year) {
+            remaining -= days_in_month(month, year);
+            month += 1;
+        }
+        format!("{}-{:02}-{:02}", year, month, remaining + 1)
+    }
+
+    fn emit_trace(&self, skill_name: &str, start_time: std::time::Instant, ctx: &ExecContext, _result: &Value) {
+        use std::io::Write;
+
+        let duration_ms = start_time.elapsed().as_millis() as u64;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+
+        // Format: YYYY-MM-DD HH:MM:SS
+        let timestamp = Self::format_time(now);
+        // Format: YYYY-MM-DD (for filename)
+        let date_str = Self::format_date(now);
+
+        // Collect node traces from ExecContext.steps
+        let node_traces: Vec<serde_json::Value> = ctx.steps
+            .iter()
+            .map(|(node_id, step)| {
+                let ok = step.exit_code == 0;
+                serde_json::json!({
+                    "id": node_id,
+                    "type": "unit",
+                    "ok": ok,
+                    "exit_code": step.exit_code,
+                    "error": if ok { "" } else { "non-zero exit" }
+                })
+            })
+            .collect();
+
+        let trace_record = serde_json::json!({
+            "trace_id": uuid::Uuid::new_v4().to_string(),
+            "skill": skill_name,
+            "started_at": timestamp,
+            "duration_ms": duration_ms,
+            "status": "success",
+            "nodes": node_traces
+        });
+
+        // Write directly to ~/.cogtome/traces/<skill>/<date>.jsonl
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        let trace_dir = std::path::PathBuf::from(home)
+            .join(".cogtome")
+            .join("traces")
+            .join(skill_name);
+
+        let file = trace_dir.join(format!("{}.jsonl", date_str));
+        if let Some(parent) = file.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&file) {
+            let _ = writeln!(f, "{}", trace_record);
+        }
     }
 
     fn find_start_node(graph: &Graph) -> Result<String> {
@@ -227,6 +331,61 @@ impl GraphMotifEngine {
 
             Node::MotifRef { id, motif, .. } => {
                 Self::set_step_result(ctx, id.clone(), serde_json::json!({ "motif": motif }), 0);
+            }
+
+            Node::Gate { id, message, timeout, on_timeout, .. } => {
+                let prompt = if message.is_empty() {
+                    format!("Gate '{}': Continue? [y/N] ", id)
+                } else {
+                    format!("{} [y/N] ", message)
+                };
+                eprint!("{}", prompt);
+
+                // Spawn blocking read on a dedicated thread to avoid blocking the async executor
+                let read_future = tokio::task::spawn_blocking(move || {
+                    use std::io::{self, BufRead};
+                    let stdin = io::stdin();
+                    let mut input = String::new();
+                    match stdin.lock().read_line(&mut input) {
+                        Ok(_) => input.trim().eq_ignore_ascii_case("y"),
+                        Err(_) => false,
+                    }
+                });
+
+                let confirmed = if *timeout > 0 {
+                    match tokio::time::timeout(
+                        tokio::time::Duration::from_secs(*timeout),
+                        read_future
+                    ).await {
+                        Ok(Ok(result)) => result,
+                        Ok(Err(_)) => false,
+                        Err(_) => {
+                            tracing::warn!(gate = %id, timeout = timeout, "Gate timed out awaiting user input");
+                            false
+                        }
+                    }
+                } else {
+                    match read_future.await {
+                        Ok(result) => result,
+                        Err(_) => false,
+                    }
+                };
+
+                if confirmed {
+                    Self::set_step_result(ctx, id.clone(), serde_json::json!({ "approved": true }), 0);
+                    let next = Self::find_next(graph, node_id, None)?;
+                    Box::pin(self.execute_node(graph, &next, runner, ctx)).await?;
+                } else {
+                    Self::set_step_result(ctx, id.clone(), serde_json::json!({ "approved": false }), 0);
+                    match on_timeout {
+                        graph::GateTimeoutAction::Escalate => {
+                            anyhow::bail!("Gate '{}' denied - escalation required", id);
+                        }
+                        _ => {
+                            anyhow::bail!("Gate '{}' denied by user", id);
+                        }
+                    }
+                }
             }
         }
 

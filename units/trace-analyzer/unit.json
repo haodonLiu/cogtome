@@ -1,0 +1,26 @@
+{
+  "name": "trace-analyzer",
+  "entry": "bin/trace-analyzer",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "skill_name": { "type": "string", "description": "Skill name to analyze (optional, analyzes all if omitted)" },
+      "days": { "type": "number", "default": 7, "description": "Number of days to look back" },
+      "trace_dir": { "type": "string", "default": "~/.cogtome/traces", "description": "Trace directory" }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "skill": { "type": "string" },
+      "executions": { "type": "number" },
+      "success_rate": { "type": "number" },
+      "avg_duration_ms": { "type": "number" },
+      "p95_duration_ms": { "type": "number" },
+      "error_types": { "type": "array" },
+      "node_stats": { "type": "array" },
+      "slowest_nodes": { "type": "array" },
+      "suggestions": { "type": "array", "items": { "type": "string" } }
+    }
+  }
+}

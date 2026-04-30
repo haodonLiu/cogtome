@@ -1,0 +1,37 @@
+{
+  "name": "trace-logger",
+  "entry": "bin/trace-logger",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "trace_id": { "type": "string" },
+      "skill": { "type": "string" },
+      "date": { "type": "string" },
+      "started_at": { "type": "string" },
+      "completed_at": { "type": "string" },
+      "duration_ms": { "type": "number" },
+      "status": { "type": "string", "enum": ["success", "error", "timeout"] },
+      "nodes": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "type": { "type": "string" },
+            "ok": { "type": "boolean" },
+            "ms": { "type": "number" },
+            "error": { "type": "string" },
+            "branch": { "type": "string" }
+          }
+        }
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "stored": { "type": "boolean" },
+      "file": { "type": "string" }
+    }
+  }
+}
