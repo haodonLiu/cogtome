@@ -18,12 +18,13 @@
 1. [What is COGTOME](#what-is-cogtome)
 2. [Key Features](#key-features)
 3. [Architecture](#architecture)
-4. [Quick Start](#quick-start)
-5. [Project Structure](#project-structure)
-6. [CLI Reference](#cli-reference)
-7. [Web UI](#web-ui)
+4. [Sandbox Isolation Strategy](#sandbox-isolation-strategy)
+5. [Quick Start](#quick-start)
+6. [Project Structure](#project-structure)
+7. [CLI Reference](#cli-reference)
 8. [Comparison](#comparison)
 9. [Design Principles](#design-principles)
+10. [Phase Status](#phase-status)
 
 ---
 
@@ -55,11 +56,11 @@ Agent intent  →  COGTOME Skill  →  Executed with guarantees
 | Feature | Description |
 |---------|-------------|
 | **Process Isolation** | Each tool runs in a separate OS process with timeout and sandbox |
+| **Layered Sandbox Isolation** | SandboxBackend trait with 4 backends: bubblewrap, e2b, quickjs, none |
 | **Zero-Rewrite Adapter** | Any script with JSON stdin/stdout becomes a Unit |
 | **JSON Schema Contracts** | Input/output validation |
 | **DAG Workflows** | Motifs support `if` branches, `foreach` loops, parallel execution |
 | **MCP Bridge** | Run MCP Servers as COGTOME Units |
-| **Visual Editor** | Web UI with drag-and-drop graph editor |
 
 ---
 
@@ -103,6 +104,57 @@ Agent (natural language intent)
 2. **All cross-layer calls go through Runtime IPC** — No direct coupling.
 3. **Schema validation at every boundary** — Fail fast on bad inputs.
 
+### SandboxBackend Trait
+
+COGTOME defines a `SandboxBackend` trait for pluggable isolation. Each Unit declares its isolation level in `unit.json`:
+
+```json
+{
+  "name": "my-unit",
+  "isolation": "bubblewrap",
+  "entry": "bin/my-unit"
+}
+```
+
+| Backend | Isolation Level | Use Case |
+|---------|----------------|----------|
+| `bubblewrap` | Local namespace sandbox | Default for most Units |
+| `e2b` | Remote strong isolation | Untrusted code, network-sensitive |
+| `quickjs` | Ultra-lightweight JS sandbox | Simple JS scripts |
+| `none` | No sandbox (fallback) | Trusted local tools |
+
+---
+
+## Sandbox Isolation Strategy
+
+COGTOME separates *what* to execute from *where* to execute. The isolation layer delegates to purpose-built sandbox runtimes rather than reimplementing cgroup/seccomp logic.
+
+### Layering Logic
+
+1. **Unit declares isolation** in `unit.json` (or default from `cogtome.toml`).
+2. **Runtime resolves backend** via the `isolation` field.
+3. **Sandbox wraps execution** — fork+exec happens inside the chosen backend.
+4. **Fallback chain** — if a backend is unavailable, COGTOME falls back to `none` with a warning.
+
+```toml
+# cogtome.toml
+[units.defaults]
+isolation = "bubblewrap"
+
+[units.isolation.my-untrusted-unit]
+backend = "e2b"
+e2b_api_key = "${E2B_API_KEY}"
+```
+
+### Threat Model Coverage
+
+| Threat | bubblewrap | e2b | quickjs | none |
+|--------|-----------|-----|---------|------|
+| Filesystem escape | ✅ | ✅ | ✅ | ❌ |
+| Network access | ✅ | ✅ | ✅ | ❌ |
+| Process tree escape | ✅ | ✅ | ✅ | ❌ |
+| Kernel exploit | ❌ | ✅ | ❌ | ❌ |
+
 ---
 
 ## Quick Start
@@ -118,23 +170,15 @@ cargo build --release
 ### 2. Run Examples
 
 ```bash
-# Discover all Complexes
 ./target/release/cogtome discover
-
-# Run a Complex
 ./target/release/cogtome run text-processing --input '{"text":"hello"}'
-
-# Run a Motif directly
 ./target/release/cogtome motif run browser-fetch --input '{"url":"https://example.com"}'
-
-# Run a Unit directly
 ./target/release/cogtome unit run text-uppercase --input '{"text":"hello"}'
 ```
 
 ### 3. MCP Bridge
 
 ```bash
-# Run an MCP Server as a COGTOME Unit
 ./target/release/cogtome mcp-bridge \
   --server "npx -y @modelcontextprotocol/server-filesystem /tmp" \
   --tool list_allowed_directories
@@ -143,11 +187,8 @@ cargo build --release
 ### 4. Environment Variables
 
 ```bash
-# Skills directory (default: ./skills)
-export COGTOME_SKILLS_DIR=./skills
-
-# Unit execution timeout (default: 30s)
-export COGTOME_TIMEOUT=60
+export COGTOME_SKILLS_DIR=./skills   # Skills directory (default: ./skills)
+export COGTOME_TIMEOUT=60            # Unit execution timeout (default: 30s)
 ```
 
 ---
@@ -159,21 +200,26 @@ cogtome/
 ├── src/                    # Runtime source (Rust)
 │   ├── main.rs             # CLI entry point (clap)
 │   ├── api.rs              # HTTP API server (axum)
+│   ├── assembly.rs         # Assembly registry
+│   ├── mcp_server.rs       # MCP Server (JSON-RPC 2.0)
 │   ├── discovery.rs        # Skills directory scanning
 │   ├── config.rs           # cogtome.toml parsing
 │   ├── engine/             # Execution engine
 │   │   ├── mod.rs          # GraphMotifEngine + StructureExecutor
 │   │   ├── graph.rs        # Graph validation
 │   │   ├── unit_runner.rs  # Unit execution (fork+exec)
-│   │   └── mcp_bridge.rs  # MCP Bridge
+│   │   └── mcp_bridge.rs   # MCP Bridge
 │   └── context/            # Execution context
 │       ├── expression.rs   # Expression evaluation
 │       └── variables.rs    # Variable resolution
-├── webui/                  # Web UI (React + React Flow)
 ├── skills/                 # Skills directory (runtime-loaded)
 │   ├── units/<name>/bin/   # Atomic executables
 │   ├── motifs/<name>.json  # JSON Motif DAG
 │   └── <complex>/SKILL.md  # Complex definitions
+├── assemblies/             # MCP Server assemblies
+│   └── <name>/
+│       ├── manifest.json
+│       └── workflow.json   # MotifManifestV2 DAG
 └── cogtome.toml            # Runtime configuration
 ```
 
@@ -182,27 +228,16 @@ cogtome/
 ## CLI Reference
 
 ```bash
-# Discovery
 cogtome discover                              # Scan all Complexes
-
-# Execution
 cogtome run <complex> --input <json>         # Run Complex
-cogtome motif run <name> --input <json>       # Run Motif
+cogtome motif run <name> --input <json>      # Run Motif
 cogtome structure run <name> --input <json>  # Run Structure
 cogtome unit run <name> --input <json>       # Run Unit
-
-# HTTP API
 cogtome serve --port 8080                    # Start REST API
-
-# MCP
 cogtome mcp-bridge --server <cmd> --tool <name>  # Run MCP Server as Unit
 cogtome mcp-server --assemblies <dir>        # Start MCP Server (stdio mode)
-
-# Pack & Install
 cogtome pack <skill>                         # Package to .cogtome
 cogtome install <file.cogtome>              # Install package
-
-# Utility
 cogtome reload                               # Hot reload
 cogtome validate <path>                      # Validate manifest
 cogtome stats                                # Assembly call heatmap
@@ -210,41 +245,16 @@ cogtome stats                                # Assembly call heatmap
 
 ---
 
-## Web UI
-
-COGTOME includes a **visual studio** for creating and debugging Motifs.
-
-### Running the Web UI
-
-```bash
-# One-click start
-./start-webui.sh
-
-# Or manual
-cargo build --release
-./target/release/cogtome serve --port 3334 &
-cd webui && npm install && npm run dev
-```
-
-Access at **http://localhost:3333**
-
-### Features
-
-- **Graph editor**: Drag-and-drop composition with 9 node types
-- **Auto-layout**: Grid-based automatic node positioning
-- **Execution trace**: See data flow through each step
-
----
-
 ## Comparison
 
-| Feature | COGTOME | MCP | LangChain | Dify/n8n |
-|---------|---------|-----|-----------|----------|
-| **Primary goal** | Run existing scripts safely | Protocol standard | Python framework | Human workflow |
-| **Tool rewrite required** | ❌ No | ✅ Yes | ⚠️ Python wrapper | ⚠️ Usually yes |
-| **Process isolation** | ✅ Yes | Depends on host | ❌ In-process | ✅ Server |
-| **Agent-native interface** | ✅ CLI | Protocol | Python API | GUI/API |
-| **Best for** | Local script sandboxing | Cross-platform tools | Python app integration | Business automation |
+| Feature | COGTOME | E2B | MCP | LangChain | Dify/n8n |
+|---------|---------|-----|-----|-----------|----------|
+| **Primary goal** | Run existing scripts safely | Cloud sandbox for AI code | Protocol standard | Python framework | Human workflow |
+| **Tool rewrite required** | ❌ No | ⚠️ Python SDK | ✅ Yes | ⚠️ Python wrapper | ⚠️ Usually yes |
+| **Process isolation** | ✅ Layered backends | ✅ MicroVM | Depends on host | ❌ In-process | ✅ Server |
+| **Sandbox options** | 4 backends | Single (Firecracker) | None | None | None |
+| **Agent-native interface** | ✅ CLI | ✅ Python/JS SDK | Protocol | Python API | GUI/API |
+| **Best for** | Local script sandboxing | Remote untrusted code | Cross-platform tools | Python app integration | Business automation |
 
 ---
 
@@ -255,7 +265,38 @@ Access at **http://localhost:3333**
 3. **Isolation by default** — Every tool runs in its own process. No exceptions.
 4. **Schema contracts** — JSON Schema validation at every boundary.
 5. **MCP compatibility** — We don't compete with MCP; we run it.
-6. **Visual + Textual** — Both graph editor and JSON authoring supported.
+6. **Open Source First** — Pure Rust, no closed-source dependencies. Every line auditable.
+7. **Isolation Outsourcing** — Don't reinvent seccomp. Delegate to bubblewrap, e2b, quickjs via a trait.
+
+---
+
+## Phase Status
+
+### Phase 1: Core Runtime ✅
+
+- [x] Four-layer execution model (Complex → Structure → Motif → Unit)
+- [x] CLI framework (discover, run, unit/motif/structure)
+- [x] Unit execution (fork+exec, stdin/stdout JSON, timeout, temp sandbox)
+- [x] JSON Motif parsing and execution (DAG graph)
+- [x] Complex discovery (SKILL.md front-matter parsing)
+- [x] `foreach` loop, `if` conditional, error strategies
+- [x] HTTP API server, Pack/Install, MCP Bridge, MCP Server
+- [x] Assembly registry, call heatmap, graceful shutdown
+
+### Phase 2: Usability 🔧
+
+- [ ] Integration test coverage (test_suite/)
+- [ ] `cogtome run` stable 100-run verification
+- [ ] Motif inline script nodes, `cogtome wrap` migration tool
+- [ ] Layered sandbox backends (bubblewrap, e2b, quickjs)
+
+### Phase 3: Observability 📊
+
+- [ ] Execution trace logging, Checkpoint nodes, Prometheus metrics
+
+### Phase 4: Integration 🔗
+
+- [ ] KimiCLI bridge, OpenClaw gateway, file system auto-reload, Skill registry
 
 ---
 
