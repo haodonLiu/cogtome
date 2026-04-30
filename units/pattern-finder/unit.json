@@ -1,0 +1,19 @@
+{
+  "name": "pattern-finder",
+  "entry": "bin/pattern-finder",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "extracted_tasks": { "type": "object" },
+      "mode": { "type": "string", "enum": ["review", "reflection"] }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "repeating_patterns": { "type": "array" },
+      "abstractable_modules": { "type": "array" },
+      "project_status": { "type": "object" }
+    }
+  }
+}

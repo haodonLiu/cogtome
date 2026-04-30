@@ -1,0 +1,22 @@
+{
+  "name": "task-extractor",
+  "entry": "bin/task-extractor",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "contents": { "type": "array" },
+      "mode": { "type": "string", "enum": ["review", "reflection"] }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "completed": { "type": "array" },
+      "in_progress": { "type": "array" },
+      "blocked": { "type": "array" },
+      "decisions": { "type": "array" },
+      "next_steps": { "type": "array" },
+      "projects": { "type": "array", "items": { "type": "string" } }
+    }
+  }
+}

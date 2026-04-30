@@ -1,0 +1,39 @@
+{
+  "name": "memory-indexer",
+  "entry": "bin/memory-indexer",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "memory_base_path": { "type": "string" },
+      "date": { "type": "string" },
+      "days": { "type": "number" },
+      "start_date": { "type": "string" },
+      "end_date": { "type": "string" },
+      "include_special": { "type": "array", "items": { "type": "string" } }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "files_read": { "type": "array", "items": { "type": "string" } },
+      "contents": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string" },
+            "date": { "type": "string" },
+            "content": { "type": "string" }
+          }
+        }
+      },
+      "date_range": {
+        "type": "object",
+        "properties": {
+          "start": { "type": "string" },
+          "end": { "type": "string" }
+        }
+      }
+    }
+  }
+}

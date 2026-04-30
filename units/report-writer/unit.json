@@ -1,0 +1,22 @@
+{
+  "name": "report-writer",
+  "entry": "bin/report-writer",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "extracted_tasks": { "type": "object" },
+      "pattern_analysis": { "type": "object" },
+      "mode": { "type": "string", "enum": ["review", "reflection"] },
+      "date": { "type": "string" },
+      "output_format": { "type": "string" }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "report": { "type": "string" },
+      "summary": { "type": "object" },
+      "mode": { "type": "string" }
+    }
+  }
+}
