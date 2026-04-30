@@ -1,0 +1,5 @@
+#!/bin/bash
+# Unit: memory-indexer
+# 读取指定日期或日期范围的 memory 文件
+
+exec python3 "$(dirname "$0")/memory-indexer.py"

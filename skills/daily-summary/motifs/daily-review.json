@@ -1,0 +1,62 @@
+{
+  "name": "daily-review",
+  "type": "motif",
+  "version": "2.0",
+  "required_units": ["memory-indexer", "task-extractor", "report-writer"],
+  "graph": {
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "position": { "x": 0, "y": 100 }
+      },
+      {
+        "id": "index_memory",
+        "type": "unit",
+        "unit": "memory-indexer",
+        "input": {
+          "memory_base_path": "${params.memory_base_path}",
+          "date": "${params.date}"
+        },
+        "position": { "x": 200, "y": 100 }
+      },
+      {
+        "id": "extract_tasks",
+        "type": "unit",
+        "unit": "task-extractor",
+        "input": {
+          "contents": "${steps.index_memory.output.contents}",
+          "mode": "review"
+        },
+        "position": { "x": 400, "y": 100 }
+      },
+      {
+        "id": "write_report",
+        "type": "unit",
+        "unit": "report-writer",
+        "input": {
+          "extracted_tasks": "${steps.extract_tasks.output}",
+          "mode": "review",
+          "date": "${params.date}"
+        },
+        "position": { "x": 600, "y": 100 }
+      },
+      {
+        "id": "done",
+        "type": "return",
+        "values": {
+          "report": "${steps.write_report.output.report}",
+          "summary": "${steps.write_report.output.summary}",
+          "date": "${params.date}"
+        },
+        "position": { "x": 800, "y": 100 }
+      }
+    ],
+    "edges": [
+      { "source": "start", "target": "index_memory" },
+      { "source": "index_memory", "target": "extract_tasks" },
+      { "source": "extract_tasks", "target": "write_report" },
+      { "source": "write_report", "target": "done" }
+    ]
+  }
+}

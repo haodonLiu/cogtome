@@ -1,0 +1,38 @@
+name: report-writer
+description: |
+  根据 task-extractor 和 pattern-finder 的输出，
+  生成结构化的总结报告（Markdown 格式）。
+input_schema:
+  type: object
+  required: [extracted_tasks]
+  properties:
+    extracted_tasks:
+      type: object
+      description: task-extractor 的输出
+    pattern_analysis:
+      type: object
+      description: pattern-finder 的输出（可选，reflection 模式需要）
+    mode:
+      type: string
+      enum: [review, reflection]
+      default: review
+    date:
+      type: string
+      description: 报告对应的日期（YYYY-MM-DD）
+    output_format:
+      type: string
+      enum: [markdown, json]
+      default: markdown
+
+output_schema:
+  type: object
+  properties:
+    report:
+      type: string
+      description: 生成的报告内容
+    summary:
+      type: object
+      description: 报告的摘要统计
+    mode:
+      type: string
+      description: 运行模式

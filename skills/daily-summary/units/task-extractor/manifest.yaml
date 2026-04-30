@@ -1,0 +1,39 @@
+name: task-extractor
+description: |
+  从 memory 内容中抽取任务相关的信息。
+  识别任务状态标记（✅ 完成、🔄 进行中、⛔ 阻碍）、
+  项目分类、下一步待办。
+input_schema:
+  type: object
+  required: [contents]
+  properties:
+    contents:
+      type: array
+      description: memory-indexer 输出的 contents 数组
+    mode:
+      type: string
+      enum: [review, reflection]
+      default: review
+      description: "review=单日抽取，reflection=多日聚合"
+
+output_schema:
+  type: object
+  properties:
+    completed:
+      type: array
+      description: 已完成的任务列表
+    in_progress:
+      type: array
+      description: 进行中的任务列表
+    blocked:
+      type: array
+      description: 遇到阻碍的任务
+    decisions:
+      type: array
+      description: 重要决策
+    next_steps:
+      type: array
+      description: 下一步待办
+    projects:
+      type: array
+      description: 涉及的项目

@@ -1,0 +1,28 @@
+name: pattern-finder
+description: |
+  跨日分析 memory 内容，识别重复出现的工作模式。
+  当同一类操作在多天内出现时，标记为可抽象的候选模式。
+input_schema:
+  type: object
+  required: [extracted_tasks]
+  properties:
+    extracted_tasks:
+      type: object
+      description: task-extractor 的输出结果
+    mode:
+      type: string
+      enum: [review, reflection]
+      default: reflection
+
+output_schema:
+  type: object
+  properties:
+    repeating_patterns:
+      type: array
+      description: 重复出现的工作模式列表
+    abstractable_modules:
+      type: array
+      description: 建议抽象成通用模块的候选
+    project_status:
+      type: object
+      description: 各项目的整体状态

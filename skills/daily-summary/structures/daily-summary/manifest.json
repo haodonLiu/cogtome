@@ -1,0 +1,43 @@
+{
+  "name": "daily-summary",
+  "type": "structure",
+  "description": "每日工作总结与反思 — 支持 review 和 reflection 两种模式",
+  "motifs": [{"name": "daily-summary"}],
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "mode": {
+        "type": "string",
+        "enum": ["review", "reflection"],
+        "default": "review",
+        "description": "运行模式：review=日报，reflection=凌晨反思"
+      },
+      "date": {
+        "type": "string",
+        "description": "日期（YYYY-MM-DD），用于 review 模式"
+      },
+      "days": {
+        "type": "number",
+        "description": "回顾天数，用于 reflection 模式",
+        "default": 7
+      },
+      "memory_base_path": {
+        "type": "string",
+        "description": "memory 文件基础路径",
+        "default": "/home/haodont/.openclaw/workspace/memory"
+      }
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "report": { "type": "string" },
+      "summary": { "type": "object" },
+      "mode": { "type": "string" },
+      "date_range": { "type": "object" }
+    }
+  },
+  "resources": {
+    "units": ["memory-indexer", "task-extractor", "pattern-finder", "report-writer"]
+  }
+}
