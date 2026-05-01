@@ -1,14 +1,15 @@
 use crate::discovery::SkillsDir;
+use crate::engine::protocol::parse_ndjson_output;
+use crate::engine::sandbox::{SandboxRegistry, load_unit_manifest};
 use crate::error::{CogtomeError, ErrorCode, ErrorLayer};
 use crate::metrics;
 use anyhow::Result;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::io::Write as StdWrite;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::fs;
-use tokio::io::AsyncWriteExt;
-use tokio::process::Command;
 use tokio::sync::{Mutex, Semaphore};
 use tracing::{error, info, warn, Instrument};
 
@@ -55,8 +56,10 @@ impl UnitConcurrency {
 #[derive(Clone)]
 pub struct UnitRunner {
     skills: SkillsDir,
+    skills_root: std::path::PathBuf,
     timeout_secs: u64,
     concurrency_config: HashMap<String, UnitConcurrency>,
+    sandbox_registry: SandboxRegistry,
     resource_semaphores: Arc<HashMap<String, Arc<Semaphore>>>,
     undeclared_semaphores: Arc<Mutex<HashMap<String, Arc<Semaphore>>>>,
 }
@@ -64,8 +67,10 @@ pub struct UnitRunner {
 impl UnitRunner {
     pub fn new_with_config(
         skills: SkillsDir,
+        skills_root: std::path::PathBuf,
         timeout_secs: u64,
         concurrency_config: HashMap<String, UnitConcurrency>,
+        sandbox_registry: SandboxRegistry,
     ) -> Self {
         // Build resource semaphores from config
         let mut resource_semaphores: HashMap<String, Arc<Semaphore>> = HashMap::new();
@@ -78,8 +83,10 @@ impl UnitRunner {
 
         Self {
             skills,
+            skills_root,
             timeout_secs,
             concurrency_config,
+            sandbox_registry,
             resource_semaphores: Arc::new(resource_semaphores),
             undeclared_semaphores: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -124,7 +131,7 @@ impl UnitRunner {
                 }
             };
 
-            // Create isolated temp directory for security sandbox
+            // Create isolated temp directory for sandbox workspace
             let exec_id = uuid::Uuid::new_v4();
             let temp_dir = std::env::temp_dir().join(format!("cogtome-exec-{}", exec_id));
 
@@ -135,8 +142,70 @@ impl UnitRunner {
                 return Err(CogtomeError::new(ErrorLayer::Runtime, ErrorCode::ERuntime, format!("Failed to create temp directory: {}", e)));
             }
 
-            // Build Command with env whitelist - default is no inherited env vars
-            let mut cmd = Command::new(&bin_path);
+            // Load per-unit manifest (sandbox overrides, env whitelist, input_schema, etc.)
+            let unit_manifest = load_unit_manifest(&self.skills_root, name);
+
+            // P0-2: Input validation — check input against unit's JSON Schema before spawning.
+            // Returns a structured Validation error instead of launching the process.
+            if let Some(ref manifest) = unit_manifest {
+                if let Some(ref schema) = manifest.input_schema {
+                    if let Err(validation_err) = jsonschema::validate(schema, &input) {
+                        let dur = start.elapsed().as_secs_f64();
+                        metrics::record_unit_failure(name, "validation_error", dur);
+                        error!(
+                            unit = %name,
+                            validation_error = %validation_err,
+                            "unit input validation failed"
+                        );
+                        return Err(CogtomeError::new(
+                            ErrorLayer::Validation,
+                            ErrorCode::EValidation,
+                            format!(
+                                "Unit '{}' input validation failed: {}",
+                                name,
+                                validation_err
+                            ),
+                        )
+                        .with_hint("Check the input passed to the unit matches the expected schema in the unit's manifest.yaml input_schema field"));
+                    }
+                }
+            }
+
+            // Resolve which sandbox backend to use
+            let backend = self.sandbox_registry.resolve_for_unit(&unit_manifest);
+            let sandbox_kind = if let Some(ref m) = unit_manifest {
+                m.sandbox.unwrap_or_else(|| self.sandbox_registry.default_backend().kind())
+            } else {
+                self.sandbox_registry.default_backend().kind()
+            };
+
+            if !backend.is_available() {
+                let dur = start.elapsed().as_secs_f64();
+                metrics::record_unit_failure(name, "sandbox_unavailable", dur);
+                let hint = backend.unavailable_hint();
+                error!(unit = %name, sandbox = %sandbox_kind, "sandbox backend unavailable");
+                return Err(CogtomeError::sandbox_unavailable(sandbox_kind, hint));
+            }
+
+            // Merge env whitelist: caller-supplied + manifest-supplied
+            let manifest_whitelist = unit_manifest
+                .as_ref()
+                .map(|m| m.env_whitelist.clone())
+                .unwrap_or_default();
+            let mut combined_whitelist: Vec<String> = env_whitelist.unwrap_or(&[]).to_vec();
+            combined_whitelist.extend(manifest_whitelist);
+
+            // Build the Command using the sandbox backend
+            let mut cmd = match backend.prepare_cmd(&bin_path, &temp_dir, unit_manifest.as_ref().unwrap_or(&Default::default())) {
+                Ok(c) => c,
+                Err(e) => {
+                    let dur = start.elapsed().as_secs_f64();
+                    metrics::record_unit_failure(name, "sandbox_error", dur);
+                    error!(unit = %name, error = %e, "sandbox prepare_cmd failed");
+                    return Err(CogtomeError::new(ErrorLayer::Runtime, ErrorCode::ERuntime, format!("Sandbox prepare failed: {}", e)));
+                }
+            };
+
             cmd.stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
@@ -144,17 +213,19 @@ impl UnitRunner {
 
             // Always add COGTOME_UNIT_MODE
             cmd.env("COGTOME_UNIT_MODE", "1");
+            // Add COGTOME_SANDBOX for introspection
+            cmd.env("COGTOME_SANDBOX", sandbox_kind.to_string());
 
-            // Add whitelisted env vars if specified
-            if let Some(whitelist) = env_whitelist {
-                for var in whitelist {
-                    if let Ok(value) = std::env::var(var) {
-                        cmd.env(var, value);
-                    }
+            // Add whitelisted env vars
+            for var in &combined_whitelist {
+                if let Ok(value) = std::env::var(var) {
+                    cmd.env(var, value);
                 }
             }
 
-            let mut child = match cmd.spawn() {
+            // Spawn the child process using std::process::Command
+            // (sandbox wrappers like bwrap/unshare are blocking std commands)
+            let child = match cmd.spawn() {
                 Ok(c) => c,
                 Err(e) => {
                     let dur = start.elapsed().as_secs_f64();
@@ -164,25 +235,54 @@ impl UnitRunner {
                 }
             };
 
-            if let Some(mut stdin) = child.stdin.take() {
-                if let Err(e) = stdin.write_all(input.to_string().as_bytes()).await {
-                    let dur = start.elapsed().as_secs_f64();
-                    metrics::record_unit_failure(name, "error", dur);
-                    error!(unit = %name, error = %e, "stdin write failed");
-                    return Err(CogtomeError::new(ErrorLayer::Unit, ErrorCode::EUnitExec, format!("stdin write failed: {}", e)));
-                };
-            }
-
-            // Use Arc<Mutex<Option<Child>>> to allow taking child for kill on timeout
+            // Wrap in Arc<Mutex> so we can take the child for kill-on-timeout
             let child_arc = Arc::new(Mutex::new(Some(child)));
             let child_for_kill = child_arc.clone();
 
+            let input_bytes = input.to_string();
             let output = tokio::time::timeout(
                 Duration::from_secs(self.timeout_secs),
                 async {
-                    let mut guard = child_arc.lock().await;
-                    if let Some(child) = guard.take() {
-                        child.wait_with_output().await
+                    // Take child from Arc<Mutex> and run blocking I/O on spawn_blocking thread
+                    let child = {
+                        let mut guard = child_arc.lock().await;
+                        guard.take()
+                    };
+
+                    if let Some(child) = child {
+                        let child = Arc::new(std::sync::Mutex::new(Some(child)));
+                        let input_bytes = input_bytes.clone();
+
+                        // Write stdin on blocking thread
+                        let child_for_stdin = child.clone();
+                        let _write_ok = tokio::task::spawn_blocking(move || {
+                            let mut c = child_for_stdin.lock().unwrap();
+                            if let Some(ref mut c) = *c {
+                                if let Some(ref mut stdin) = c.stdin.take() {
+                                    return stdin.write_all(input_bytes.as_bytes()).is_ok();
+                                }
+                            }
+                            true
+                        }).await.unwrap_or(true);
+
+                        // Wait for output on blocking thread
+                        let child_for_wait = child.clone();
+                        tokio::task::spawn_blocking(move || {
+                            let mut c = child_for_wait.lock().unwrap();
+                            if let Some(child) = c.take() {
+                                child.wait_with_output()
+                            } else {
+                                Err(std::io::Error::new(
+                                    std::io::ErrorKind::Other,
+                                    "child already taken",
+                                ))
+                            }
+                        }).await.unwrap_or_else(|_| {
+                            Err(std::io::Error::new(
+                                std::io::ErrorKind::Other,
+                                "spawn_blocking task panicked",
+                            ))
+                        })
                     } else {
                         Err(std::io::Error::new(
                             std::io::ErrorKind::Other,
@@ -212,7 +312,9 @@ impl UnitRunner {
                     // Timeout - kill the child process
                     let mut guard = child_for_kill.lock().await;
                     if let Some(mut child) = guard.take() {
-                        let _ = child.kill().await;
+                        tokio::task::spawn_blocking(move || {
+                            let _ = child.kill();
+                        }).await.ok();
                     }
                     let dur = start.elapsed().as_secs_f64();
                     metrics::record_unit_failure(name, "timeout", dur);
@@ -253,9 +355,12 @@ impl UnitRunner {
                 return Err(err);
             }
 
-            // Unit stdout/stderr protocol: first line is JSON result, rest is logs (ignored)
-            let first_line = stdout.lines().next().unwrap_or("");
-            let result: Value = match serde_json::from_str(first_line) {
+            // P0-1: Unit protocol — parse stdout using NDJSON-aware parser.
+            // Accepts:
+            //   - Single-line JSON output (legacy)
+            //   - NDJSON with type-tagged lines (protocol v1)
+            // In both cases only the {"type":"result",...} line is used.
+            let result: Value = match parse_ndjson_output(&stdout) {
                 Ok(v) => v,
                 Err(e) => {
                     let dur = start.elapsed().as_secs_f64();
@@ -263,19 +368,19 @@ impl UnitRunner {
                     error!(
                         unit = %name,
                         parse_error = %e,
-                        raw_output = %first_line.chars().take(200).collect::<String>(),
-                        "invalid JSON output from unit"
+                        "unit output failed to parse via protocol rules"
                     );
                     return Err(CogtomeError::new(
                         ErrorLayer::Unit,
                         ErrorCode::EUnitExec,
                         format!(
-                            "Invalid JSON output from unit '{}': expected first line JSON, got: {}",
+                            "Unit '{}' output protocol violation: {} [{}] -- raw first line: {}",
                             name,
-                            first_line.chars().take(200).collect::<String>()
+                            e.kind,
+                            e.detail,
+                            stdout.lines().next().unwrap_or("").chars().take(200).collect::<String>()
                         ),
-                    )
-                    .with_hint("Units must print exactly one JSON object as the first line of stdout"));
+                    ).with_hint("Units must print valid JSON to stdout. Prefer one JSON object per line, with logs going to stderr."))
                 }
             };
 

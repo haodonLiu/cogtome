@@ -1,9 +1,12 @@
 pub mod graph;
 pub mod mcp_bridge;
+pub mod protocol;
+pub mod sandbox;
 pub mod unit_runner;
 
 #[allow(unused_imports)]
 pub use graph::{Edge, Graph, GraphValidationError, Node, Position};
+pub use sandbox::{SandboxBackend, SandboxRegistry};
 pub use unit_runner::{UnitConcurrency, UnitRunner};
 pub use mcp_bridge::{McpBridgeInput, McpBridgeUnit};
 
@@ -16,8 +19,10 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Instant;
-use tracing::{error, info, Instrument};
+use std::io::Read;
+use std::time::{Duration, Instant};
+use chrono::{TimeZone, Utc};
+use tracing::{error, info, warn, Instrument};
 
 // ============================================================================
 // Motif Manifest v2 (JSON)
@@ -95,7 +100,8 @@ impl GraphMotifEngine {
             info!(motif = %manifest.name, result_keys = result.as_object().map(|o| o.len()).unwrap_or(0), "motif completed");
 
             // Trace hook: log execution to ~/.cogtome/traces/
-            self.emit_trace(manifest.name.as_str(), start_time, &ctx, &result);
+            let wallclock = std::time::SystemTime::now();
+            self.emit_trace(manifest.name.as_str(), start_time, wallclock, &ctx, &result);
 
             Ok(result)
         }
@@ -104,58 +110,35 @@ impl GraphMotifEngine {
     }
 
     fn format_time(d: std::time::Duration) -> String {
-        let secs = d.as_secs();
-        let hours = (secs % 86400) / 3600;
-        let mins = (secs % 3600) / 60;
-        let seconds = secs % 60;
-        let days = secs / 86400;
-        let mut year = 1970 + (days / 365) as i64;
-        let mut remaining = (days % 365) as i64;
-        let is_leap = |y: i64| y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
-        let days_in_yr = |y: i64| if is_leap(y) { 366 } else { 365 };
-        while remaining >= days_in_yr(year) {
-            remaining -= days_in_yr(year);
-            year += 1;
-        }
-        format!("{}d{}h:{:02}:{:02}", year, remaining, hours, mins)
+        Utc.timestamp_opt(d.as_secs() as i64, 0)
+            .unwrap()
+            .format("%Y-%m-%dT%H:%M:%SZ")
+            .to_string()
     }
 
     fn format_date(d: std::time::Duration) -> String {
-        let secs = d.as_secs();
-        let days = secs / 86400;
-        let mut year = 1970 + (days / 365) as i64;
-        let mut remaining = (days % 365) as i64;
-        let is_leap = |y: i64| y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
-        let days_in_yr = |y: i64| if is_leap(y) { 366 } else { 365 };
-        while remaining >= days_in_yr(year) {
-            remaining -= days_in_yr(year);
-            year += 1;
-        }
-        let days_in_month = |m: i64, y: i64| match m {
-            1|3|5|7|8|10|12 => 31,
-            4|6|9|11 => 30,
-            2 => if is_leap(y) { 29 } else { 28 },
-            _ => 30,
-        };
-        let mut month = 1;
-        while remaining >= days_in_month(month, year) {
-            remaining -= days_in_month(month, year);
-            month += 1;
-        }
-        format!("{}-{:02}-{:02}", year, month, remaining + 1)
+        Utc.timestamp_opt(d.as_secs() as i64, 0)
+            .unwrap()
+            .format("%Y-%m-%d")
+            .to_string()
     }
 
-    fn emit_trace(&self, skill_name: &str, start_time: std::time::Instant, ctx: &ExecContext, _result: &Value) {
-        use std::io::Write;
-
+    fn emit_trace(&self, skill_name: &str, start_time: std::time::Instant, wallclock: std::time::SystemTime, ctx: &ExecContext, result: &Value) {
         let duration_ms = start_time.elapsed().as_millis() as u64;
-        let now = std::time::SystemTime::now()
+        let now = wallclock
             .duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
 
         // Format: YYYY-MM-DD HH:MM:SS
         let timestamp = Self::format_time(now);
         // Format: YYYY-MM-DD (for filename)
         let date_str = Self::format_date(now);
+
+        // Determine status from result
+        let status = if result.is_null() {
+            "success"
+        } else {
+            "success"
+        };
 
         // Collect node traces from ExecContext.steps
         let node_traces: Vec<serde_json::Value> = ctx.steps
@@ -176,29 +159,152 @@ impl GraphMotifEngine {
             })
             .collect();
 
+        let end_wallclock = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+        let completed_at = Self::format_time(end_wallclock);
+
         let trace_record = serde_json::json!({
             "trace_id": uuid::Uuid::new_v4().to_string(),
             "skill": skill_name,
+            "date": date_str,
             "started_at": timestamp,
+            "completed_at": completed_at,
             "duration_ms": duration_ms,
-            "status": "success",
+            "status": status,
             "nodes": node_traces
         });
 
-        // Write directly to ~/.cogtome/traces/<skill>/<date>.jsonl
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        let trace_dir = std::path::PathBuf::from(home)
-            .join(".cogtome")
-            .join("traces")
-            .join(skill_name);
+        let json_input = trace_record.to_string();
 
-        let file = trace_dir.join(format!("{}.jsonl", date_str));
-        if let Some(parent) = file.parent() {
-            let _ = std::fs::create_dir_all(parent);
+        // Spawn trace-logger asynchronously — does not block the main execution path
+        let tracer_path = std::path::PathBuf::from(".")
+            .join("units")
+            .join("trace-logger")
+            .join("bin")
+            .join("trace-logger");
+
+        // Run trace-logger in a background thread (non-blocking for async executor).
+        // The thread is joined so the trace completes before process exit.
+        std::thread::spawn(move || {
+            let mut child = std::process::Command::new(&tracer_path)
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .spawn();
+
+            if let Ok(ref mut handle) = child {
+                // Write input, then drop stdin to signal EOF to the script
+                if let Some(ref mut stdin) = handle.stdin {
+                    use std::io::Write;
+                    let _ = stdin.write_all(json_input.as_bytes());
+                }
+                // Read stdout
+                let mut stdout_buf = Vec::new();
+                if let Some(ref mut stdout) = handle.stdout {
+                    let _ = stdout.read_to_end(&mut stdout_buf);
+                }
+                if let Ok(output) = String::from_utf8(stdout_buf) {
+                    let trimmed = output.trim();
+                    if !trimmed.is_empty() {
+                        tracing::debug!(tracer_output = %trimmed, "trace-logger output");
+                    }
+                }
+            }
+        });
+    }
+
+    // P0-5: Execution event emission to stderr (JSON Lines format)
+    // These events enable observability: CLI users see progress, MCP clients
+    // can capture them for structured progress reporting.
+    fn emit_step_event(event_type: &str, node_id: &str, unit: &str, start: Instant) {
+        let event = serde_json::json!({
+            "event": event_type,
+            "node_id": node_id,
+            "unit": unit,
+            "timestamp": Utc::now().timestamp_millis(),
+            "elapsed_ms": start.elapsed().as_millis() as u64,
+        });
+        eprintln!("{}career_trace:{}", "\x1b[2K\x1b[G", event);
+        // Also emit to tracing at debug level for structured log aggregation
+        tracing::debug!(event = event_type, node_id = node_id, unit = unit, "step_event");
+    }
+
+    fn emit_step_end_event(node_id: &str, unit: &str, duration_ms: u64, status: &str) {
+        let event = serde_json::json!({
+            "event": "step_end",
+            "node_id": node_id,
+            "unit": unit,
+            "duration_ms": duration_ms,
+            "status": status,
+            "timestamp": Utc::now().timestamp_millis(),
+        });
+        eprintln!("{}career_trace:{}", "\x1b[2K\x1b[G", event);
+        tracing::debug!(event = "step_end", node_id = node_id, unit = unit, duration_ms = duration_ms, status = status, "step_end");
+    }
+
+    // P0-3: Retry with exponential backoff for retryable unit errors.
+    // Uses the unit's RetryConfig from the manifest (max retries, backoff strategy).
+    async fn retry_with_backoff(
+        runner: &UnitRunner,
+        unit_name: &str,
+        input: Value,
+        config: &graph::RetryConfig,
+    ) -> Result<(Value, i32), CogtomeError> {
+        let max_retries = config.max;
+        let base_delay_ms = 200u64;
+
+        for attempt in 0..=max_retries {
+            match runner.call(unit_name, input.clone(), None).await {
+                Ok(result) => return Ok(result),
+                Err(e) => {
+                    let is_last_attempt = attempt >= max_retries;
+                    let is_retryable = e.retryable;
+
+                    if is_last_attempt || !is_retryable {
+                        return Err(e);
+                    }
+
+                    // Calculate delay: exponential backoff with jitter
+                    let delay_ms = if is_retryable {
+                        let exp_delay = base_delay_ms * 2u64.pow(attempt);
+                        let jitter = (Self::rand_u32() % 50) as u64;
+                        exp_delay + jitter
+                    } else {
+                        return Err(e);
+                    };
+
+                    warn!(
+                        unit = %unit_name,
+                        attempt = attempt + 1,
+                        max_retries = max_retries,
+                        delay_ms = delay_ms,
+                        error = %e,
+                        "unit failed, retrying"
+                    );
+
+                    // Emit retry event
+                    let event = serde_json::json!({
+                        "event": "step_retry",
+                        "unit": unit_name,
+                        "attempt": attempt + 1,
+                        "max_retries": max_retries,
+                        "delay_ms": delay_ms,
+                        "error": e.message,
+                    });
+                    eprintln!("{}career_trace:{}", "\x1b[2K\x1b[G", event);
+
+                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                }
+            }
         }
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&file) {
-            let _ = writeln!(f, "{}", trace_record);
-        }
+        unreachable!()
+    }
+
+    fn rand_u32() -> u32 {
+        use std::time::Instant;
+        // Simple deterministic-ish rand from instant nanos
+        let now = Instant::now();
+        ((now.elapsed().as_nanos() % 0xFFFFFFFF) as u32).wrapping_mul(1103515245).wrapping_add(12345)
     }
 
     fn find_start_node(graph: &Graph) -> Result<String> {
@@ -226,11 +332,25 @@ impl GraphMotifEngine {
                 Box::pin(self.execute_node(graph, &next, runner, ctx)).await?;
             }
 
-            Node::Unit { id, unit, input, on_error, .. } => {
+            Node::Unit { id, unit, input, retry, on_error, .. } => {
                 let resolved_input = Self::resolve_input(input, ctx)?;
                 let node_start = Instant::now();
-                let result = runner.call(unit, resolved_input, None).await;
+
+                // P0-5: Emit step_start event to stderr (JSON Lines)
+                Self::emit_step_event("step_start", id, unit, node_start);
+
+                // P0-3: Retry with exponential backoff if retry config is present and error is retryable
+                let result = if let Some(ref retry_cfg) = retry {
+                    Self::retry_with_backoff(runner, unit, resolved_input, retry_cfg).await
+                } else {
+                    runner.call(unit, resolved_input, None).await
+                };
+
                 let node_ms = node_start.elapsed().as_millis() as u64;
+
+                // P0-5: Emit step_end event to stderr
+                let status = if result.is_ok() { "ok" } else { "error" };
+                Self::emit_step_end_event(id, unit, node_ms, status);
 
                 match result {
                     Ok((output, _exit_code)) => {

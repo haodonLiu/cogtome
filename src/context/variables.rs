@@ -4,22 +4,49 @@ use serde_json::Value;
 
 use super::expression::{eval_condition, eval_expression, is_truthy};
 
+/// Execution Context — isolated per run.
+///
+/// P0-4: Each `run` gets a unique execution_id and temp directory.
+/// This prevents concurrent requests from interfering with each other
+/// (e.g., writing to the same /tmp file).
 #[derive(Debug, Clone)]
 pub struct ExecContext {
+    /// Unique ID for this execution run (UUID v4). Used for tempdir isolation.
+    pub execution_id: uuid::Uuid,
+    /// Resolved input parameters (user-provided + defaults applied).
     pub params: Value,
-    pub locals: HashMap<String, Value>,   // 迭代变量 (item, __index, as_var)
-    pub steps: Arc<HashMap<String, StepResult>>,  // O(1) clone via Arc
+    /// Local variables — iteration variables (item, __index, as_var).
+    /// Each ExecContext has its own locals map — fully isolated per execution.
+    pub locals: HashMap<String, Value>,
+    /// Completed step results. Stored in Arc<HashMap> for O(1) clone
+    /// when branching (e.g., foreach). Each execution context has its own
+    /// steps map — no cross-contamination between concurrent runs.
+    pub steps: Arc<HashMap<String, StepResult>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct StepResult {
     pub output: Value,
     pub exit_code: i32,
+    pub duration_ms: Option<u64>,
 }
 
 impl ExecContext {
+    /// Create a new execution context with a fresh UUID and isolated state.
     pub fn new(params: Value) -> Self {
         Self {
+            execution_id: uuid::Uuid::new_v4(),
+            params,
+            locals: HashMap::new(),
+            steps: Arc::new(HashMap::new()),
+        }
+    }
+
+    /// Create a new execution context with a specific UUID (useful for testing).
+    #[allow(dead_code)]
+    pub fn with_id(execution_id: uuid::Uuid, params: Value) -> Self {
+        Self {
+            execution_id,
             params,
             locals: HashMap::new(),
             steps: Arc::new(HashMap::new()),
@@ -31,7 +58,8 @@ impl ExecContext {
     /// 2. steps (先局部后快照 - 注意 foreach 内不可修改外部 steps)
     /// 3. params (用户输入)
     /// 4. env (环境变量)
-    pub fn resolve_var(&self, expr: &str) -> Option<Value> {
+    #[allow(dead_code)]
+pub fn resolve_var(&self, expr: &str) -> Option<Value> {
         let expr = expr.trim();
 
         // 三目运算符检测
@@ -62,13 +90,15 @@ impl ExecContext {
     }
 
     /// 创建子上下文（foreach 迭代用）- O(1) 快照
-    pub fn fork_for_iteration(&self, iteration_var: String, iteration_value: Value, index: usize) -> Self {
+    #[allow(dead_code)]
+pub fn fork_for_iteration(&self, iteration_var: String, iteration_value: Value, index: usize) -> Self {
         let mut locals = self.locals.clone();
         locals.insert(iteration_var, iteration_value.clone());
         locals.insert("__index".to_string(), serde_json::json!(index));
         locals.insert("item".to_string(), iteration_value);  // item 作为默认迭代变量名
 
         Self {
+            execution_id: self.execution_id,
             params: self.params.clone(),
             locals,
             steps: Arc::clone(&self.steps),  // O(1) 克隆
@@ -76,10 +106,12 @@ impl ExecContext {
     }
 
     /// 在子上下文中记录 step 结果（copy-on-write）
+#[allow(dead_code)]
     pub fn with_local_step(&self, name: String, result: StepResult) -> Self {
         let mut new_steps = (*self.steps).clone();  // 首次写入时深拷贝
         new_steps.insert(name, result);
         Self {
+            execution_id: self.execution_id,
             params: self.params.clone(),
             locals: self.locals.clone(),
             steps: Arc::new(new_steps),
@@ -351,7 +383,7 @@ mod tests {
 
     // Helper to create a step result
     fn step(name: &str, output: serde_json::Value, exit_code: i32) -> (String, StepResult) {
-        (name.to_string(), StepResult { output, exit_code })
+        (name.to_string(), StepResult { output, exit_code, duration_ms: None })
     }
 
     #[test]
@@ -395,8 +427,7 @@ mod tests {
     #[test]
     fn test_resolve_var_with_local_step() {
         let ctx = make_ctx(serde_json::json!({}));
-        let step_result = StepResult { output: serde_json::json!({"result": "ok"}), exit_code: 0 };
-        let ctx = ctx.with_local_step("fetch".to_string(), step_result);
+        let step_result = StepResult { output: serde_json::json!({"result": "ok"}), exit_code: 0, duration_ms: None };
         assert_eq!(
             ctx.resolve_var("${steps.fetch.output.result}").unwrap(),
             serde_json::json!("ok")
@@ -406,8 +437,7 @@ mod tests {
     #[test]
     fn test_resolve_var_exit_code() {
         let ctx = make_ctx(serde_json::json!({}));
-        let step_result = StepResult { output: serde_json::json!({"data": 42}), exit_code: 0 };
-        let ctx = ctx.with_local_step("compute".to_string(), step_result);
+        let step_result = StepResult { output: serde_json::json!({"data": 42}), exit_code: 0, duration_ms: None };
         assert_eq!(
             ctx.resolve_var("${steps.compute.exit_code}").unwrap(),
             serde_json::json!(0)
@@ -427,7 +457,7 @@ mod tests {
         // Original params should still be accessible
         assert_eq!(forked.resolve_var("${params.total}").unwrap(), serde_json::json!(100));
         // Steps should be shared (read-only snapshot)
-        let step_result = StepResult { output: serde_json::json!("step_result"), exit_code: 0 };
+        let step_result = StepResult { output: serde_json::json!("step_result"), exit_code: 0, duration_ms: None };
         let ctx_with_step = ctx.with_local_step("s1".to_string(), step_result);
         let forked_from_stepped = ctx_with_step.fork_for_iteration("item".to_string(), item, 0);
         assert!(forked_from_stepped.resolve_var("${steps.s1.output}").is_some());
@@ -436,8 +466,8 @@ mod tests {
     #[test]
     fn test_with_local_step_is_immutable() {
         let ctx = make_ctx(serde_json::json!({}));
-        let ctx1 = ctx.with_local_step("a".to_string(), StepResult { output: serde_json::json!(1), exit_code: 0 });
-        let ctx2 = ctx1.with_local_step("b".to_string(), StepResult { output: serde_json::json!(2), exit_code: 0 });
+        let ctx1 = ctx.with_local_step("a".to_string(), StepResult { output: serde_json::json!(1), exit_code: 0, duration_ms: None });
+        let ctx2 = ctx1.with_local_step("b".to_string(), StepResult { output: serde_json::json!(2), exit_code: 0, duration_ms: None });
 
         // ctx1 should have step "a"
         assert!(ctx1.resolve_var("${steps.a.output}").is_some());

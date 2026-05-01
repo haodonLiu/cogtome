@@ -149,6 +149,31 @@ pub enum Node {
         #[serde(default)]
         position: Option<Position>,
     },
+    /// Gate node: pauses for human confirmation before continuing.
+    #[serde(rename = "gate")]
+    Gate {
+        id: String,
+        #[serde(default)]
+        message: String,
+        #[serde(default = "default_gate_timeout")]
+        timeout: u64,
+        #[serde(default)]
+        on_timeout: GateTimeoutAction,
+        #[serde(default)]
+        position: Option<Position>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GateTimeoutAction {
+    #[default]
+    Deny,
+    Escalate,
+}
+
+fn default_gate_timeout() -> u64 {
+    300
 }
 
 fn default_as_var() -> String {
@@ -175,10 +200,12 @@ impl Node {
             Node::Join { id, .. } => id,
             Node::Return { id, .. } => id,
             Node::MotifRef { id, .. } => id,
+            Node::Gate { id, .. } => id,
         }
     }
 
-    pub fn type_name(&self) -> &str {
+    #[allow(dead_code)]
+pub fn type_name(&self) -> &str {
         match self {
             Node::Start { .. } => "start",
             Node::Unit { .. } => "unit",
@@ -189,9 +216,11 @@ impl Node {
             Node::Join { .. } => "join",
             Node::Return { .. } => "return",
             Node::MotifRef { .. } => "motif",
+            Node::Gate { .. } => "gate",
         }
     }
 
+#[allow(dead_code)]
     pub fn position(&self) -> Option<&Position> {
         match self {
             Node::Start { position, .. } => position.as_ref(),
@@ -203,6 +232,7 @@ impl Node {
             Node::Join { position, .. } => position.as_ref(),
             Node::Return { position, .. } => position.as_ref(),
             Node::MotifRef { position, .. } => position.as_ref(),
+            Node::Gate { position, .. } => position.as_ref(),
         }
     }
 }
@@ -306,7 +336,7 @@ impl<'a> Graph {
                         });
                     }
                 }
-                Node::Unit { .. } | Node::Join { .. } | Node::MotifRef { .. } => {
+                Node::Unit { .. } | Node::Join { .. } | Node::MotifRef { .. } | Node::Gate { .. } => {
                     if outs != 1 {
                         return Err(GraphValidationError::WrongOutgoingEdgeCount {
                             node_id: id.to_string(),
@@ -474,16 +504,19 @@ impl<'a> Graph {
     }
 
     /// Get outgoing edges from a node
-    pub fn outgoing_edges(&self, node_id: &str) -> Vec<&Edge> {
+    #[allow(dead_code)]
+pub fn outgoing_edges(&self, node_id: &str) -> Vec<&Edge> {
         self.edges.iter().filter(|e| e.source == node_id).collect()
     }
 
     /// Get incoming edges to a node
-    pub fn incoming_edges(&self, node_id: &str) -> Vec<&Edge> {
+    #[allow(dead_code)]
+pub fn incoming_edges(&self, node_id: &str) -> Vec<&Edge> {
         self.edges.iter().filter(|e| e.target == node_id).collect()
     }
 
     /// Topological sort for execution order
+#[allow(dead_code)]
     pub fn topological_sort(&self) -> Vec<&Node> {
         let mut in_degree: HashMap<&str, usize> = HashMap::new();
         let mut adj: HashMap<&str, Vec<&str>> = HashMap::new();
