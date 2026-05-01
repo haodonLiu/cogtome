@@ -1,310 +1,228 @@
-<img src="cover.jpg" width="400" alt="COGTOME" />
-
-> English | [中文版本](README_CN.md)
-
 # COGTOME
 
-> **Agent's execution layer constraint — reduce hallucinations, improve reliability.**
+> **让 Agent 拥有可自编排、自进化、可观测的执行层。**
 
-> COGTOME gives AI Agents a tested, reusable execution playbook. The Agent decides *what* to do; COGTOME ensures the execution follows the correct DAG, handles errors, and maintains state.
+COGTOME 是一个 Rust 实现的高可靠 Agent 运行时框架——将任何脚本转化为可组合、可隔离、可自进化的 Skill，为 AI Agent 提供经过验证的执行 playbook。
 
 [![Rust](https://img.shields.io/badge/Rust-1.70%2B-orange.svg)](https://rust-lang.org)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ---
 
-## Table of Contents
+## 核心定位
 
-1. [What is COGTOME](#what-is-cogtome)
-2. [Key Features](#key-features)
-3. [Architecture](#architecture)
-4. [Sandbox Isolation Strategy](#sandbox-isolation-strategy)
-5. [Quick Start](#quick-start)
-6. [Project Structure](#project-structure)
-7. [CLI Reference](#cli-reference)
-8. [Comparison](#comparison)
-9. [Design Principles](#design-principles)
-10. [Phase Status](#phase-status)
+**Agent 知道该做什么，但常常做不好怎么执行。**
 
----
+- 工具调用顺序错误
+- 参数类型传错
+- 错误处理不完整
+- 多步骤状态中途丢失
+- 执行过程对 Agent 不透明
 
-## What is COGTOME
-
-COGTOME is a **runtime that executes declarative workflows as Agent tools** — process isolation, DAG orchestration, state propagation, and observable execution traces.
-
-### The Problem
-
-Agents know *what* to do but often fail *how* to do it:
-- Tool calls in wrong order
-- Parameters passed incorrectly
-- Errors handled incompletely
-- Multi-step state lost mid-execution
-
-### The Solution
-
-COGTOME provides a tested execution blueprint (Skill) that the Agent can invoke. The Agent focuses on intent; COGTOME handles execution rigor.
+COGTOME 为 Agent 提供一个**经过验证的执行蓝图（Skill）**——Agent 专注意图，COGTOME 保证执行严格按 DAG 路径进行，处理好错误，维护状态，并留下完整执行痕迹供自我分析。
 
 ```
-Agent intent  →  COGTOME Skill  →  Executed with guarantees
-                 (DAG + contracts)
+Agent 意图  →  COGTOME Skill  →  DAG 执行 + 隔离 + 可观测
 ```
 
 ---
 
-## Key Features
+## 核心特性
 
-| Feature | Description |
-|---------|-------------|
-| **Process Isolation** | Each tool runs in a separate OS process with timeout and sandbox |
-| **Layered Sandbox Isolation** | SandboxBackend trait with 4 backends: bubblewrap, e2b, quickjs, none |
-| **Zero-Rewrite Adapter** | Any script with JSON stdin/stdout becomes a Unit |
-| **JSON Schema Contracts** | Input/output validation |
-| **DAG Workflows** | Motifs support `if` branches, `foreach` loops, parallel execution |
-| **MCP Bridge** | Run MCP Servers as COGTOME Units |
+### 自编排（Self-Orchestrating）
 
----
+三层执行模型，Agent 只感知 Skill，底层执行由 DAG 引擎驱动：
 
-## Architecture
+| 层级 | 可见性 | 职责 |
+|------|--------|------|
+| **Skill** | ✅ Agent | 名称、描述、输入输出 Schema |
+| **Motif** | ❌ 内部 | JSON DAG 编排（if/foreach/fork/join） |
+| **Unit** | ❌ 内部 | 原子进程（任意语言，JSON stdin/stdout） |
 
-COGTOME uses a three-layer execution model:
+### 自进化（Self-Evolving）
+
+**Agent 执行自己的 trace 日志，用 LLM 分析，发现模式，生成改进建议。**
 
 ```
-Agent (natural language intent)
-        │
-        ▼
-┌─────────────────────┐
-│       Skill         │  ← Agent-facing layer
-│                     │     Name, description, input/output schema
-└─────────┬───────────┘
-          │
-          ▼
-┌─────────────────────┐
-│       Motif         │  ← Orchestration logic (JSON DAG)
-│                     │     Nodes: start, unit, if, match, foreach, fork, join, return
-└─────────┬───────────┘
-          │ IPC (fork+exec, stdin/stdout JSON)
-          ▼
-┌─────────────────────┐
-│        Unit         │  ← Atomic execution (independent process)
-│                     │     Any language, JSON stdin/stdout
-└─────────────────────┘
+执行 Complex → trace 记录（JSONL）→ LLM 分析 → 识别失败模式/慢路径 → 生成改进策略 → 自动或半自动更新 Motif/Skill
 ```
 
-### Layer Overview
+这不是泛泛的"反思"，COGTOME 的护城河是 **trace-logger 的数据结构设计**——细粒度捕获每个步骤的输入、输出、耗时、状态、错误类型，让 LLM 分析有足够的信息来源。
 
-| Layer | Purpose | Agent Visible? |
-|-------|---------|---------------|
-| **Skill** | Exposed capability with description and schema | ✅ Yes |
-| **Motif** | JSON DAG orchestration | ❌ No |
-| **Unit** | Atomic executable process | ❌ No |
+### 可观测（Observable）
 
-### Core Discipline
+每一步执行都输出结构化事件流：
 
-1. **Units never call each other** — Runtime blocks recursive invocation via `COGTOME_UNIT_MODE=1`.
-2. **All cross-layer calls go through Runtime IPC** — No direct coupling.
-3. **Schema validation at every boundary** — Fail fast on bad inputs.
-
-### SandboxBackend Trait
-
-COGTOME defines a `SandboxBackend` trait for pluggable isolation. Each Unit declares its isolation level in `unit.json`:
-
-```json
-{
-  "name": "my-unit",
-  "isolation": "bubblewrap",
-  "entry": "bin/my-unit"
-}
+```
+{"event":"step_start","step_id":1,"unit":"http-get","timestamp":1700000000}
+{"event":"variable_resolved","name":"url","source":"input","resolved":"https://..."}
+{"event":"step_end","step_id":1,"duration_ms":234,"status":"ok","output":{...}}
+{"event":"execution_failed","step_id":2,"error":"timeout","retry_attempt":1}
 ```
 
-| Backend | Isolation Level | Use Case |
-|---------|----------------|----------|
-| `bubblewrap` | Local namespace sandbox | Default for most Units |
-| `e2b` | Remote strong isolation | Untrusted code, network-sensitive |
-| `quickjs` | Ultra-lightweight JS sandbox | Simple JS scripts |
-| `none` | No sandbox (fallback) | Trusted local tools |
+事件流写入 stderr，支持 HTTP SSE 推送，配合 trace 可视化 dashboard 使用。
 
----
+### 分层沙箱隔离（Layered Sandbox）
 
-## Sandbox Isolation Strategy
+COGTOME 不重新实现 seccomp/cgroup——通过 `SandboxBackend` trait 委托给专业工具：
 
-COGTOME separates *what* to execute from *where* to execute. The isolation layer delegates to purpose-built sandbox runtimes rather than reimplementing cgroup/seccomp logic.
+| 隔离级别 | 工具 | 适用场景 |
+|---------|------|---------|
+| `bubblewrap` | 本地 namespace 沙箱 | 默认，通用场景 |
+| `e2b` | 云端 Firecracker 微虚机 | 不可信代码、网络敏感 |
+| `quickjs` | 超轻量 JS 沙箱 | 简单 JS 脚本 |
+| `none` | 无隔离 | 本地可信工具 |
 
-### Layering Logic
+### MCP 原生运行（MCP-Native）
 
-1. **Unit declares isolation** in `unit.json` (or default from `cogtome.toml`).
-2. **Runtime resolves backend** via the `isolation` field.
-3. **Sandbox wraps execution** — fork+exec happens inside the chosen backend.
-4. **Fallback chain** — if a backend is unavailable, COGTOME falls back to `none` with a warning.
-
-```toml
-# cogtome.toml
-[units.defaults]
-isolation = "bubblewrap"
-
-[units.isolation.my-untrusted-unit]
-backend = "e2b"
-e2b_api_key = "${E2B_API_KEY}"
-```
-
-### Threat Model Coverage
-
-| Threat | bubblewrap | e2b | quickjs | none |
-|--------|-----------|-----|---------|------|
-| Filesystem escape | ✅ | ✅ | ✅ | ❌ |
-| Network access | ✅ | ✅ | ✅ | ❌ |
-| Process tree escape | ✅ | ✅ | ✅ | ❌ |
-| Kernel exploit | ❌ | ✅ | ❌ | ❌ |
-
----
-
-## Quick Start
-
-### 1. Build
+COGTOME 不是另一个协议桥——**原生运行 MCP Servers 作为 COGTOME Units**，利用现有 MCP 生态，而不是重新发明轮子：
 
 ```bash
-git clone https://github.com/haodonLiu/cogtome.git
-cd cogtome
-cargo build --release
-```
-
-### 2. Run Examples
-
-```bash
-./target/release/cogtome discover
-./target/release/cogtome run text-processing --input '{"text":"hello"}'
-./target/release/cogtome motif run browser-fetch --input '{"url":"https://example.com"}'
-./target/release/cogtome unit run text-uppercase --input '{"text":"hello"}'
-```
-
-### 3. MCP Bridge
-
-```bash
-./target/release/cogtome mcp-bridge \
+# 把任何 MCP Server 直接作为 Skill 使用
+cogtome mcp-bridge \
   --server "npx -y @modelcontextprotocol/server-filesystem /tmp" \
   --tool list_allowed_directories
 ```
 
-### 4. Environment Variables
+---
 
-```bash
-export COGTOME_SKILLS_DIR=./skills   # Skills directory (default: ./skills)
-export COGTOME_TIMEOUT=60            # Unit execution timeout (default: 30s)
+## 架构
+
+```
+┌──────────────────────────────────────┐
+│           Agent (意图层)             │
+│   "帮我抓取这个页面并总结"            │
+└────────────────┬─────────────────────┘
+                 │ JSON input/output
+                 ▼
+┌──────────────────────────────────────┐
+│         Skill（可发现、可复用）       │
+│  manifest.yaml + SKILL.md            │
+│  声明输入输出 Schema，描述能力         │
+└────────────────┬─────────────────────┘
+                 │ DAG 执行引擎
+                 ▼
+┌──────────────────────────────────────┐
+│         Motif（编排逻辑层）           │
+│  if / foreach / fork / join / retry  │
+│  DAG 节点类型，控制执行路径           │
+└────────────────┬─────────────────────┘
+                 │ fork + exec
+                 ▼
+┌──────────────────────────────────────┐
+│         Unit（隔离执行层）            │
+│  任意语言，JSON stdin/stdout         │
+│  每步独立进程，资源上限，事件上报     │
+└──────────────────────────────────────┘
 ```
 
 ---
 
-## Project Structure
+## 快速开始
+
+```bash
+# 编译
+git clone https://github.com/haodonLiu/cogtome.git
+cd cogtome && cargo build --release
+
+# 发现所有 Skills
+./target/release/cogtome discover
+
+# 运行一个 Skill
+./target/release/cogtome run text-processing --input '{"text":"hello world"}'
+
+# 启动 API Server
+./target/release/cogtome serve --port 8080
+
+# 启动 MCP Server（stdio 模式）
+./target/release/cogtome mcp-server --assemblies ./assemblies
+```
+
+### 环境变量
+
+```bash
+export COGTOME_SKILLS_DIR=./skills    # Skills 目录
+export COGTOME_TIMEOUT=60             # Unit 超时（秒）
+export COGTOME_TRACE_DIR=./traces    # trace 日志目录
+```
+
+---
+
+## 项目结构
 
 ```
 cogtome/
-├── src/                    # Runtime source (Rust)
-│   ├── main.rs             # CLI entry point (clap)
-│   ├── api.rs              # HTTP API server (axum)
-│   ├── assembly.rs         # Assembly registry
-│   ├── mcp_server.rs       # MCP Server (JSON-RPC 2.0)
-│   ├── discovery.rs        # Skills directory scanning
-│   ├── config.rs           # cogtome.toml parsing
-│   ├── engine/             # Execution engine
-│   │   ├── mod.rs          # GraphMotifEngine + StructureExecutor
-│   │   ├── graph.rs        # Graph validation
-│   │   ├── unit_runner.rs  # Unit execution (fork+exec)
-│   │   └── mcp_bridge.rs   # MCP Bridge
-│   └── context/            # Execution context
-│       ├── expression.rs   # Expression evaluation
-│       └── variables.rs    # Variable resolution
-├── skills/                 # Skills directory (runtime-loaded)
-│   ├── units/<name>/bin/   # Atomic executables
-│   ├── motifs/<name>.json  # JSON Motif DAG
-│   └── <complex>/SKILL.md  # Complex definitions
-├── assemblies/             # MCP Server assemblies
+├── src/
+│   ├── main.rs              # CLI 入口（clap）
+│   ├── api.rs               # HTTP API Server（axum + tokio）
+│   ├── mcp_server.rs        # MCP Server（JSON-RPC 2.0）
+│   ├── assembly.rs          # Assembly 注册表
+│   ├── discovery.rs         # Skills 目录扫描
+│   ├── validation.rs        # JSON Schema 输入校验
+│   ├── engine/              # 执行引擎
+│   │   ├── mod.rs           # GraphMotifEngine
+│   │   ├── unit_runner.rs   # 进程启动 + 协议解析
+│   │   ├── protocol.rs      # stdout/stderr 协议约定
+│   │   └── events.rs        # 执行事件流
+│   └── context/             # 执行上下文
+│       ├── variables.rs     # 变量作用域隔离（每 ExecutionContext 独立）
+│       └── expression.rs    # 聚合表达式
+├── skills/                  # Skills 目录（运行时加载）
+│   └── <name>/
+│       ├── manifest.yaml    # Structure 定义
+│       └── ...
+├── assemblies/              # MCP Server Assemblies
 │   └── <name>/
 │       ├── manifest.json
-│       └── workflow.json   # MotifManifestV2 DAG
-└── cogtome.toml            # Runtime configuration
+│       └── workflow.json
+├── feedback/               # 架构评审与反馈
+├── development/            # 技术规格、SKILL 编写指南
+└── cogtome.toml           # 运行时配置
 ```
 
 ---
 
-## CLI Reference
+## Phase 状态
 
-```bash
-cogtome discover                              # Scan all Complexes
-cogtome run <complex> --input <json>         # Run Complex
-cogtome motif run <name> --input <json>      # Run Motif
-cogtome structure run <name> --input <json>  # Run Structure
-cogtome unit run <name> --input <json>       # Run Unit
-cogtome serve --port 8080                    # Start REST API
-cogtome mcp-bridge --server <cmd> --tool <name>  # Run MCP Server as Unit
-cogtome mcp-server --assemblies <dir>        # Start MCP Server (stdio mode)
-cogtome pack <skill>                         # Package to .cogtome
-cogtome install <file.cogtome>              # Install package
-cogtome reload                               # Hot reload
-cogtome validate <path>                      # Validate manifest
-cogtome stats                                # Assembly call heatmap
-```
+| Phase | 内容 | 状态 |
+|-------|------|------|
+| **Phase 1** | 核心运行时（Unit/Motif/Skill 三层模型、CLI、HTTP API、MCP Bridge） | ✅ |
+| **Phase 2** | 可用性（输入校验、错误策略、并发隔离、执行事件流、Sandbox 多后端） | ✅ |
+| **Phase 3** | 自进化（trace-logger + LLM 分析 + 改进建议生成） | 🔧 进行中 |
+| **Phase 4** | 集成（OpenClaw gateway、KimiCLI bridge、Skill 生态） | 📋 规划中 |
 
 ---
 
-## Comparison
+## 设计原则
 
-| Feature | COGTOME | E2B | MCP | LangChain | Dify/n8n |
-|---------|---------|-----|-----|-----------|----------|
-| **Primary goal** | Run existing scripts safely | Cloud sandbox for AI code | Protocol standard | Python framework | Human workflow |
-| **Tool rewrite required** | ❌ No | ⚠️ Python SDK | ✅ Yes | ⚠️ Python wrapper | ⚠️ Usually yes |
-| **Process isolation** | ✅ Layered backends | ✅ MicroVM | Depends on host | ❌ In-process | ✅ Server |
-| **Sandbox options** | 4 backends | Single (Firecracker) | None | None | None |
-| **Agent-native interface** | ✅ CLI | ✅ Python/JS SDK | Protocol | Python API | GUI/API |
-| **Best for** | Local script sandboxing | Remote untrusted code | Cross-platform tools | Python app integration | Business automation |
-
----
-
-## Design Principles
-
-1. **Don't make users learn metaphors** — Call things what they are: Units, Motifs, Skills.
-2. **Zero-rewrite adoption** — Your existing scripts are valuable. Preserve them.
-3. **Isolation by default** — Every tool runs in its own process. No exceptions.
-4. **Schema contracts** — JSON Schema validation at every boundary.
-5. **MCP compatibility** — We don't compete with MCP; we run it.
-6. **Open Source First** — Pure Rust, no closed-source dependencies. Every line auditable.
-7. **Isolation Outsourcing** — Don't reinvent seccomp. Delegate to bubblewrap, e2b, quickjs via a trait.
+1. **零重写采纳** — 你现有的脚本就是资产，保留它们。
+2. **进程隔离默认** — 每个工具跑在独立进程，无例外。
+3. **Schema 契约** — 每个边界做 JSON Schema 校验，坏输入快速失败。
+4. **MCP 借力生态** — 不重新发明轮子，原生运行 MCP Servers。
+5. **自进化数据优先** — trace-logger 的数据结构是护城河，上层分析可替换。
+6. **隔离委托专业工具** — bubblewrap/e2b/quickjs 通过 trait 接入，不重复造轮子。
+7. **纯 Rust** — 无闭源依赖，每行代码可审计。
 
 ---
 
-## Phase Status
+## 与其他方案对比
 
-### Phase 1: Core Runtime ✅
-
-- [x] Four-layer execution model (Complex → Structure → Motif → Unit)
-- [x] CLI framework (discover, run, unit/motif/structure)
-- [x] Unit execution (fork+exec, stdin/stdout JSON, timeout, temp sandbox)
-- [x] JSON Motif parsing and execution (DAG graph)
-- [x] Complex discovery (SKILL.md front-matter parsing)
-- [x] `foreach` loop, `if` conditional, error strategies
-- [x] HTTP API server, Pack/Install, MCP Bridge, MCP Server
-- [x] Assembly registry, call heatmap, graceful shutdown
-
-### Phase 2: Usability 🔧
-
-- [ ] Integration test coverage (test_suite/)
-- [ ] `cogtome run` stable 100-run verification
-- [ ] Motif inline script nodes, `cogtome wrap` migration tool
-- [ ] Layered sandbox backends (bubblewrap, e2b, quickjs)
-
-### Phase 3: Observability 📊
-
-- [ ] Execution trace logging, Checkpoint nodes, Prometheus metrics
-
-### Phase 4: Integration 🔗
-
-- [ ] KimiCLI bridge, OpenClaw gateway, file system auto-reload, Skill registry
+| 特性 | COGTOME | E2B | MCP | LangChain | Dify/n8n |
+|------|---------|-----|-----|-----------|----------|
+| **定位** | Agent 执行层 | 云端沙箱 | 协议标准 | Python 框架 | 人工工作流 |
+| **脚本需要重写** | ❌ 不需要 | ⚠️ Python/JS SDK | ✅ 需要 | ⚠️ Python 封装 | ⚠️ 通常需要 |
+| **进程隔离** | ✅ 分层后端 | ✅ 微虚机 | 依赖宿主机 | ❌ 进程内 | ✅ 服务端 |
+| **自进化** | ✅ trace → LLM 分析 | ❌ | ❌ | ⚠️ Reflexion | ❌ |
+| **可观测性** | ✅ 执行事件流 | ⚠️ 基础 | ❌ | ⚠️ 回调 | ✅ |
+| **MCP 原生** | ✅ | ❌ | ✅ | ⚠️ | ❌ |
 
 ---
 
-## Links
+## 文档
 
-- [User Manual](./docs/USER_MANUAL.md)
-- [Technical Specification](./development/TECHNICAL_SPEC.md)
-- [Skill Authoring Guide](./development/SKILL_AUTHORING_GUIDE.md)
+- [用户手册](./docs/USER_MANUAL.md)
+- [技术规格](./development/TECHNICAL_SPEC.md)
+- [Skill 编写指南](./development/SKILL_AUTHORING_GUIDE.md)
 
 ---
 
