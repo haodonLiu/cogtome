@@ -10,13 +10,15 @@ mod mcp_server;
 mod pack;
 mod services;
 mod shutdown;
+mod stats;
+mod trace_dashboard;
 mod validation;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use config::CogtomeConfig;
 use discovery::{extract_first_structure, SkillsDir};
-use engine::{GraphMotifEngine, McpBridgeInput, McpBridgeUnit, StructureExecutor, UnitConcurrency, UnitRunner};
+use engine::{GraphMotifEngine, McpBridgeInput, McpBridgeUnit, SandboxRegistry, StructureExecutor, UnitConcurrency, UnitRunner};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -105,6 +107,21 @@ enum Commands {
         /// 执行超时（秒）
         #[arg(long, default_value = "30")]
         timeout: u64,
+    },
+    /// 显示 Assembly 调用热力图
+    Stats {
+        /// 显示详细信息
+        #[arg(long)]
+        heat: bool,
+        /// 归档僵尸 Assembly
+        #[arg(long)]
+        gc: bool,
+    },
+    /// 启动 Trace Dashboard（可观测性可视化）
+    TraceDashboard {
+        /// Dashboard 端口
+        #[arg(long, default_value = "4321")]
+        port: u16,
     },
 }
 
@@ -252,7 +269,16 @@ async fn main() -> Result<()> {
             )
         })
         .collect();
-    let runner = UnitRunner::new_with_config(skills.clone(), timeout, concurrency_config);
+    let sandbox_registry = SandboxRegistry::new()
+        .with_default(config.sandbox.default.clone());
+    let sandbox_registry_for_server = sandbox_registry.clone();
+    let runner = UnitRunner::new_with_config(
+        skills.clone(),
+        skills_root.clone(),
+        timeout,
+        concurrency_config,
+        sandbox_registry,
+    );
 
     match cli.command {
         // ------------------------------------------------------------------
@@ -352,7 +378,7 @@ async fn main() -> Result<()> {
             let graceful = shutdown::GracefulShutdown::new();
             let token = graceful.token();
 
-            api::start_server_with_shutdown(port, skills.clone(), timeout, token).await?;
+            api::start_server_with_shutdown(port, skills.clone(), skills_root.clone(), timeout, sandbox_registry_for_server, token).await?;
 
             // Log graceful shutdown completion
             if graceful.is_shutdown_requested() {
@@ -464,6 +490,74 @@ async fn main() -> Result<()> {
             );
 
             run_server(assemblies_dir, units_dir, timeout)?;
+        }
+        // ------------------------------------------------------------------
+        // Stats：显示 Assembly 调用热力图
+        // ------------------------------------------------------------------
+        Commands::Stats { heat, gc } => {
+            let mut store = stats::StatsStore::load();
+            store.update_zombie_status();
+
+            if gc {
+                // Auto-archive zombies older than 90 days
+                let archivable = store.auto_archivable();
+                if archivable.is_empty() {
+                    println!("// No assemblies eligible for archive.");
+                } else {
+                    let archive_dir = std::env::var_os("HOME")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(std::env::temp_dir)
+                        .join(".cogtome")
+                        .join("archive");
+                    std::fs::create_dir_all(&archive_dir)?;
+
+                    for name in &archivable {
+                        let src = PathBuf::from("assemblies").join(name);
+                        let dst = archive_dir.join(name);
+                        if src.exists() {
+                            std::fs::rename(&src, &dst)?;
+                            println!("// Archived: {} → {}", name, dst.display());
+                        }
+                    }
+                    store.save()?;
+                }
+            } else {
+                // Display stats table
+                let rows = store.display_rows();
+                if rows.is_empty() {
+                    println!("// No assembly stats recorded yet. Run assemblies via MCP to start tracking.");
+                    return Ok(());
+                }
+
+                if heat {
+                    // Heat map view
+                    println!("{:<30} {:>8} {:>12} {:>10}", "Assembly", "Calls", "Last Used", "Status");
+                    println!("{}", "-".repeat(64));
+                    for row in &rows {
+                        let status_icon = match row.status.as_str() {
+                            "active" => "●",
+                            "zombie" => "○",
+                            _ => "◌",
+                        };
+                        println!(
+                            "{:<30} {:>8} {:>12} {:>1} {}",
+                            row.name, row.call_count, row.last_used, status_icon, row.status
+                        );
+                    }
+                    println!("\n// ● active  ◌ idle  ○ zombie (30+ days unused)");
+                } else {
+                    // Simple list view
+                    println!("{:<30} {:>8} {:>12}", "Assembly", "Calls", "Last Used");
+                    println!("{}", "-".repeat(52));
+                    for row in &rows {
+                        println!("{:<30} {:>8} {:>12}", row.name, row.call_count, row.last_used);
+                    }
+                }
+            }
+        }
+        Commands::TraceDashboard { port } => {
+            info!(port = port, "starting trace dashboard");
+            trace_dashboard::start_dashboard(port).await?;
         }
     }
 

@@ -911,4 +911,124 @@ skills/
 
 ---
 
-*最后更新：2026-04-30*
+## 附录 D：Trace Dashboard（可观测性）
+
+### D.1 概述
+
+COGTOME 内置 trace 可视化 dashboard，读取 `COGTOME_TRACE_DIR` 下的 JSONL 执行记录，以 HTML 页面展示执行历史、成功率、耗时分布。
+
+### D.2 环境变量
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `COGTOME_TRACE_DIR` | trace 日志目录 | `~/.cogtome/traces` |
+
+### D.3 Trace 文件格式
+
+每次执行完成后，COGTOME 将结构化记录写入 trace 日志：
+
+```json
+{
+  "trace_id": "uuid",
+  "skill": "daily-summary",
+  "date": "2026-05-01",
+  "started_at": "2026-05-01T18:00:00Z",
+  "completed_at": "2026-05-01T18:00:05Z",
+  "duration_ms": 5200,
+  "status": "success",
+  "nodes": [
+    { "id": "index-memory", "type": "unit", "ok": true, "ms": 1200 },
+    { "id": "extract-tasks", "type": "unit", "ok": true, "ms": 800 }
+  ]
+}
+```
+
+### D.4 启动 Trace Dashboard
+
+```bash
+# 需要先构建
+cargo build --release
+
+# 启动 dashboard（默认端口 4321）
+cargo run --release -- trace-dashboard
+
+# 或指定端口
+cargo run --release -- trace-dashboard --port 8080
+```
+
+### D.5 Dashboard 功能
+
+- **执行统计**：总执行次数、成功率、平均耗时
+- **按技能筛选**：支持按 skill name 和 date 过滤
+- **执行详情**：每次执行的节点耗时、状态、错误信息
+- **自动刷新**：每 30 秒自动刷新数据
+
+### D.6 REST API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/` | HTML dashboard 页面 |
+| GET | `/api/traces` | 列出 trace 记录 |
+| GET | `/api/traces/stats` | 统计汇总 |
+| GET | `/api/traces/:trace_id` | 单条 trace 详情 |
+
+查询参数：
+- `skill` — 按技能名筛选
+- `date` — 按日期筛选（YYYY-MM-DD）
+- `limit` — 返回条数（默认 50）
+
+---
+
+## 附录 E：Benchmark 基准测试
+
+### E.1 概述
+
+COGTOME 内置基准测试套件，测量核心指标：执行成功率、平均耗时、Motif 复用率。
+
+### E.2 运行基准测试
+
+```bash
+cargo test --release -- --nocapture benchmark
+```
+
+### E.3 环境变量
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `BENCHMARK_ITERATIONS` | 迭代次数 | `100` |
+| `BENCHMARK_SKILL` | 测试用技能名 | `text-uppercase` |
+
+### E.4 输出指标
+
+| 指标 | 说明 |
+|------|------|
+| **Success Rate** | 成功次数 / 总次数 |
+| **Avg Duration** | 平均执行耗时 |
+| **P50 / P95 Duration** | 中位数和 95 分位耗时 |
+| **Motif Reuse Rate** | 共享底层 Unit 的技能比例 |
+
+### E.5 示例输出
+
+```
+══════════════════════════════════════════════════════════════
+  COGTOME Benchmark Results
+══════════════════════════════════════════════════════════════
+
+  Success Rate:              100 / 100 (100.0%)
+  Failures:                       0
+
+  Duration Statistics:
+  Average:                    52.3 ms
+  Min:                         31 ms
+  Max:                        187 ms
+  P50:                        48 ms
+  P95:                        89 ms
+
+  Motif Reuse Rate:           60.0%
+
+══════════════════════════════════════════════════════════════
+```
+
+---
+
+*最后更新：2026-05-01*
