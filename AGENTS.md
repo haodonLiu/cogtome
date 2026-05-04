@@ -1,6 +1,6 @@
 # COGTOME — Agent Coding Guide
 
-> **TL;DR**: COGTOME is a Rust-based execution runtime for AI Agents. It uses a three-layer execution model (Skill → Motif → Unit) where Units are external processes communicating via stdin/stdout JSON, Motifs are DAG graphs (JSON), and the Runtime orchestrates them with process isolation, expression evaluation, and structured errors. Read this before modifying code.
+> **TL;DR**: COGTOME is a Rust-based execution runtime for AI Agents. It uses a three-layer execution model (Structure → Motif → Unit) where Units are external processes communicating via stdin/stdout JSON, Motifs are DAG graphs (JSON), and the Runtime orchestrates them with process isolation, expression evaluation, and structured errors. Read this before modifying code.
 
 ---
 
@@ -32,7 +32,7 @@ cargo test
   --tool list_allowed_directories
 ./target/release/cogtome mcp-server --assemblies ./assemblies --units ./units
 
-# Pack/install skills
+# Pack/install structures
 ./target/release/cogtome pack text-processing
 ./target/release/cogtome install ./text-processing.cogtome
 
@@ -46,24 +46,24 @@ cargo test
 
 ```
 Agent (natural language intent)
-        │
-        ▼
-┌─────────────────────┐
-│       Skill         │  ← Agent-facing layer
-│                     │     Name, description, input/output schema
-└─────────┬───────────┘
-          │
-          ▼
-┌─────────────────────┐
-│       Motif         │  ← Orchestration logic (JSON DAG)
-│                     │     Nodes: start, unit, if, match, foreach, fork, join, return
-└─────────┬───────────┘
-          │ IPC (fork+exec, stdin/stdout JSON)
-          ▼
-┌─────────────────────┐
-│        Unit         │  ← Atomic execution (independent process)
-│                     │     Any language, JSON stdin/stdout
-└─────────────────────┘
+        |
+        v
++---------------------+
+|     Structure       |  <- Chains Motifs (skills/ or assemblies/)
+|                     |     Name, description, input/output schema
++-------------+-------+
+              |
+              v
++---------------------+
+|       Motif         |  <- Orchestration logic (JSON DAG)
+|                     |     Nodes: start, unit, if, match, foreach, fork, join, return
++-------------+-------+
+              | IPC (fork+exec, stdin/stdout JSON)
+              v
++---------------------+
+|        Unit         |  <- Atomic execution (independent process)
+|                     |     Any language, JSON stdin/stdout
++---------------------+
 ```
 
 **Core discipline:**
@@ -79,7 +79,7 @@ Agent (natural language intent)
 src/
 ├── main.rs              # CLI entry point (clap), command dispatch
 ├── config.rs            # cogtome.toml parsing
-├── discovery.rs         # SkillsDir scanning, Complex discovery
+├── discovery.rs         # SkillsDir scanning, Structure discovery
 ├── validation.rs        # JSON Schema validation
 ├── pack.rs              # .cogtome archive pack/install
 ├── api.rs               # HTTP API server (axum)
@@ -103,18 +103,20 @@ src/
 
 ---
 
-## Skills Directory Layout
+## Structures Directory Layout
+
+Two types of Structures chain Motifs:
 
 ```
-skills/
-├── units/<name>/bin/<name>     # Executable Unit
-├── motifs/<name>.json          # Filename MUST match `name` field
-└── <complex>/SKILL.md           # Complex with YAML front matter
+skills/                              # Structure type 1: skills directory
+├── units/<name>/bin/<name>         # Executable Unit
+├── motifs/<name>.json               # Filename MUST match `name` field
+└── <name>/SKILL.md                  # Structure manifest with YAML front matter
 
-assemblies/
+assemblies/                          # Structure type 2: MCP assemblies
 └── <name>/
-    ├── manifest.json           # Assembly manifest
-    └── workflow.json           # MotifManifestV2 DAG
+    ├── manifest.json                # Assembly manifest
+    └── workflow.json                # MotifManifestV2 DAG
 ```
 
 **Naming rules (violations cause "not found" errors):**
@@ -181,7 +183,7 @@ resource_key = "shared_key"
 - **All I/O must be async** using `tokio` APIs. No `std::fs`/`std::process` in async contexts (except startup config loading).
 - **Error handling**: `anyhow::Result` at boundaries, `anyhow::Context` for rich errors, prefer `?` over unwrap.
 - **JSON**: `serde_json::Value` for dynamic schemas, structs for manifests.
-- **Naming**: `snake_case` functions/variables, `PascalCase` types. Layer names (Skill, Motif, Unit) are proper nouns.
+- **Naming**: `snake_case` functions/variables, `PascalCase` types. Layer names (Structure, Motif, Unit) are proper nouns.
 - **ExecContext**: Uses `Arc<HashMap>` for O(1) snapshot. Preserve this pattern.
 - **Tracing**: Use structured fields (`key = %value`) over string interpolation.
 
@@ -227,12 +229,12 @@ Integration tests: documented in `test_suite/` (manual CLI invocations).
 |--------|------|-------------|
 | GET | `/health` | Returns `"OK"` |
 | GET | `/metrics` | Metrics snapshot |
-| GET | `/complexes` | List all Complexes |
+| GET | `/structures` | List all Structures |
 | POST | `/run` | Execute via tagged union |
 
 POST `/run` body:
 ```json
-{"type": "complex", "name": "text-processing", "input": {"text": "hello"}}
+{"type": "structure", "name": "text-processing", "input": {"text": "hello"}}
 {"type": "motif", "name": "browser-fetch", "input": {"url": "https://example.com"}}
 {"type": "unit", "name": "text-uppercase", "input": {"text": "hello"}}
 ```
@@ -252,8 +254,8 @@ POST `/run` body:
 | Expression engine | `src/context/expression.rs` |
 | HTTP API | `src/api.rs` |
 | MCP integration | `src/mcp_server.rs`, `src/engine/mcp_bridge.rs` |
-| Skill authoring | `development/SKILL_AUTHORING_GUIDE.md` |
+| Structure authoring | `development/SKILL_AUTHORING_GUIDE.md` |
 
 ---
 
-*Last updated: 2026-04-30*
+*Last updated: 2026-05-04*

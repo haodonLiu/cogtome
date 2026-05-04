@@ -10,14 +10,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 cargo build --release                              # Build release binary
 cargo test                                         # Run all tests
 cargo test context::expression::tests               # Run expression engine tests
-./target/release/cogtome discover                  # Scan all Complexes
-./target/release/cogtome run <complex> --input '<json>'   # Execute Complex
+./target/release/cogtome discover                  # Scan all Structures
+./target/release/cogtome run <structure> --input '<json>'   # Execute Structure
 ./target/release/cogtome unit run <name> --input '<json>' # Run Unit directly
 ./target/release/cogtome motif run <name> --input '<json>' # Run Motif (JSON v2)
 ./target/release/cogtome structure run <name> --input '<json>' # Run Structure
 ./target/release/cogtome serve --port 3334         # Start HTTP API server
 ./target/release/cogtome mcp-server --assemblies ./assemblies --units ./units  # MCP server (stdio)
-./start-webui.sh                                   # One-click: build + API + WebUI
 ```
 
 **Environment variables:**
@@ -27,16 +26,15 @@ cargo test context::expression::tests               # Run expression engine test
 
 ## Architecture
 
-COGTOME is a micro OS for AI Agents with four execution layers:
+COGTOME is a micro OS for AI Agents with three execution layers:
 
 ```
-Agent → Complex (L4) → Structure (L3) → Motif (L2) → Unit (L1)
+Agent -> Structure -> Motif -> Unit
 ```
 
-- **L4 Complex**: Domain facade with `SKILL.md`
-- **L3 Structure**: Chains motifs sequentially
-- **L2 Motif**: DAG orchestration via `MotifManifestV2` (JSON with `graph{nodes, edges}`)
-- **L1 Unit**: Atomic executor — fork+exec CLI, stdin/stdout JSON
+- **Structure**: Chains motifs sequentially. Two kinds: skills/ (with SKILL.md) and assemblies/ (with manifest.json)
+- **Motif**: DAG orchestration via `MotifManifestV2` (JSON with `graph{nodes, edges}`)
+- **Unit**: Atomic executor — fork+exec CLI, stdin/stdout JSON
 
 **Core discipline**: Units never call each other. All cross-layer calls go through Runtime IPC.
 
@@ -65,15 +63,14 @@ Motifs use JSON with a directed graph model:
 | `main.rs` | CLI entry via clap. Routes to Unit/Motif/Structure/Run/Discover/Serve/McpServer/Pack/Install/Reload |
 | `assembly.rs` | `AssemblyRegistry` — discovers assemblies from `assemblies/` via `manifest.json` |
 | `mcp_server.rs` | MCP server — JSON-RPC 2.0 stdio, `tools/list`, `tools/call` |
-| `unit_registry.rs` | `UnitRegistry` — discovers units from `units/` via `unit.json` |
 | `engine/mod.rs` | `GraphMotifEngine` (v2 JSON DAG executor), `StructureExecutor`, `MotifManifestV2` |
 | `engine/graph.rs` | `Graph` validation — cycles, start/return counts, fork/join pairing |
 | `engine/unit_runner.rs` | `UnitRunner` — tokio process execution with semaphore rate limiting, timeout |
 | `context/variables.rs` | `ExecContext` — variable resolution `${...}`, step storage with Arc-snapshot |
 | `context/expression.rs` | Expression engine — filter, map, conditions, ternary, array indexing |
-| `discovery.rs` | `SkillsDir` — two-phase lookup (global then Complex-private paths) |
+| `discovery.rs` | `SkillsDir` — discovers structures from skills/ and assemblies/ directories |
 | `config.rs` | `CogtomeConfig` — `cogtome.toml` parsing, concurrency (supports `max_global = -1` = unlimited) |
-| `api.rs` | HTTP API (Axum) — `/health`, `/complexes`, `/api/motifs`, `/run` |
+| `api.rs` | HTTP API (Axum) — `/health`, `/structures`, `/api/motifs`, `/run` |
 | `pack.rs` | `.cogtome` archive pack/install (tar+gzip) |
 | `validation.rs` | JSON Schema validation via `jsonschema` crate |
 
@@ -86,7 +83,7 @@ skills/                          # Skills root (COGTOME_SKILLS_DIR)
 ├── units/<name>/bin/<name>     # Executable Unit
 ├── motifs/<name>.json          # JSON v2 Motif (DAG format)
 ├── structures/<name>/manifest.json  # Structure manifest
-└── <complex>/SKILL.md          # Complex facade
+└── <name>/SKILL.md             # Structure facade
 
 assemblies/                      # MCP Server assemblies
 └── <assembly>/
