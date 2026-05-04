@@ -20,3 +20,5 @@ webui/package-lock.json
 tools/*/target/
 
 
+target/
+*.lock
