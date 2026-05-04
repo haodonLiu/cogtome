@@ -1,0 +1,42 @@
+{
+  "name": "trace-analyzer",
+  "type": "motif",
+  "version": "2.0",
+  "required_units": ["trace-analyzer"],
+  "graph": {
+    "nodes": [
+      {"id": "start", "type": "start", "position": {"x": 0, "y": 100}},
+      {
+        "id": "analyze",
+        "type": "unit",
+        "unit": "trace-analyzer",
+        "input": {
+          "skill_name": "${params.skill_name}",
+          "days": "${params.days}",
+          "trace_dir": "${params.trace_dir}"
+        },
+        "position": {"x": 200, "y": 100}
+      },
+      {
+        "id": "return",
+        "type": "return",
+        "values": {
+          "skill": "${steps.analyze.output.skill}",
+          "executions": "${steps.analyze.output.executions}",
+          "success_rate": "${steps.analyze.output.success_rate}",
+          "avg_duration_ms": "${steps.analyze.output.avg_duration_ms}",
+          "p95_duration_ms": "${steps.analyze.output.p95_duration_ms}",
+          "error_types": "${steps.analyze.output.error_types}",
+          "node_stats": "${steps.analyze.output.node_stats}",
+          "slowest_nodes": "${steps.analyze.output.slowest_nodes}",
+          "suggestions": "${steps.analyze.output.suggestions}"
+        },
+        "position": {"x": 400, "y": 100}
+      }
+    ],
+    "edges": [
+      {"source": "start", "target": "analyze"},
+      {"source": "analyze", "target": "return"}
+    ]
+  }
+}

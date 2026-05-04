@@ -1,0 +1,33 @@
+# gitleaks configuration with custom rules for COGTOME-specific secrets
+
+[allowlist]
+description = "COGTOME allowlist"
+paths = [
+  "node_modules/",
+  "webui/node_modules/",
+  "target/",
+  "webui/dist/",
+]
+
+# Custom rules for API keys not covered by default gitleaks rules
+[[rules]]
+id = "minimax-api-key"
+description = "MiniMax API Key (sk-cp-)"
+regex = '''sk-cp-[a-zA-Z0-9_]{40,}'''
+EntropyHighlight = true
+
+[[rules]]
+id = "generic-api-key"
+description = "Generic API Key (high entropy)"
+regex = '''(?i)(api[_-]?key|apikey|api_secret|access_token)\s*[=:]\s*['\"]?[a-zA-Z0-9_\-]{20,}['\"]?'''
+EntropyHighlight = true
+
+[[rules]]
+id = "bearer-token-in-header"
+description = "Hardcoded Bearer token in Authorization header"
+regex = '''Bearer\s+[a-zA-Z0-9_\-\.]{20,}'''
+EntropyHighlight = true
+
+# Override entropy threshold for long tokens (reduce false negatives)
+[entropy]
+threshold = 4.0

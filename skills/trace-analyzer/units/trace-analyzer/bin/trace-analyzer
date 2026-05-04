@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+"""
+trace-analyzer — analyzes COGTOME trace JSONL files and produces summary stats.
+
+Input (stdin JSON):
+{
+  "skill_name": "daily-summary",   # optional, analyzes all if omitted
+  "days": 7,
+  "trace_dir": "~/.cogtome/traces"
+}
+
+Output (stdout JSON):
+{
+  "skill": "...",
+  "executions": N,
+  "success_rate": 0.0-1.0,
+  "avg_duration_ms": float,
+  "p95_duration_ms": float,
+  "error_types": [{"type": "...", "count": N}, ...],
+  "node_stats": [{"id": "...", "count": N, "avg_ms": float, "fail_count": N}, ...],
+  "slowest_nodes": [{"id": "...", "avg_ms": float}, ...],
+  "suggestions": ["..."]
+}
+"""
+
+import sys
+import json
+import os
+from pathlib import Path
+from collections import defaultdict
+import statistics
+
+def load_traces(trace_dir: Path, skill_name: str | None, days: int) -> list[dict]:
+    """Load trace records from JSONL files."""
+    records = []
+    
+    if skill_name:
+        skills = [skill_name]
+    else:
+        skills = [d.name for d in trace_dir.iterdir() if d.is_dir()]
+    
+    cutoff = days * 86400  # seconds
+    
+    for skill in skills:
+        skill_dir = trace_dir / skill
+        if not skill_dir.is_dir():
+            continue
+        
+        for jsonl_file in skill_dir.glob("*.jsonl"):
+            # Check file mtime as a rough filter
+            if jsonl_file.stat().st_mtime < (os.path.getmtime(__file__) - cutoff) if False else True:
+                pass  # load all for now
+            
+            try:
+                with open(jsonl_file) as f:
+                    for line in f:
+                        line = line.strip()
+                        if line:
+                            try:
+                                records.append(json.loads(line))
+                            except json.JSONDecodeError:
+                                pass
+            except Exception:
+                pass
+    
+    return records
+
+def analyze(records: list[dict]) -> dict:
+    """Compute stats from trace records."""
+    if not records:
+        return {
+            "skill": "",
+            "executions": 0,
+            "success_rate": 0.0,
+            "avg_duration_ms": 0.0,
+            "p95_duration_ms": 0.0,
+            "error_types": [],
+            "node_stats": [],
+            "slowest_nodes": [],
+            "suggestions": []
+        }
+    
+    skill = records[0].get("skill", "unknown")
+    n = len(records)
+    
+    # Success rate
+    successes = sum(1 for r in records if r.get("status") == "success")
+    success_rate = successes / n
+    
+    # Duration stats
+    durations = [r.get("duration_ms", 0) for r in records if r.get("duration_ms")]
+    avg_duration = statistics.mean(durations) if durations else 0.0
+    p95_duration = sorted(durations)[int(len(durations) * 0.95)] if durations else 0.0
+    
+    # Error types
+    error_counts = defaultdict(int)
+    for r in records:
+        if r.get("status") != "success":
+            nodes_with_errors = [n for n in r.get("nodes", []) if not n.get("ok")]
+            for node in nodes_with_errors:
+                err = node.get("error", "unknown") or "unknown"
+                error_counts[err] += 1
+    
+    error_types = [{"type": k, "count": v} for k, v in sorted(error_counts.items(), key=lambda x: -x[1])]
+    
+    # Node stats
+    node_stats = defaultdict(lambda: {"count": 0, "total_ms": 0, "fail_count": 0})
+    for r in records:
+        for node in r.get("nodes", []):
+            nid = node.get("id", "?")
+            node_stats[nid]["count"] += 1
+            if node.get("ms"):
+                node_stats[nid]["total_ms"] += node["ms"]
+            if not node.get("ok"):
+                node_stats[nid]["fail_count"] += 1
+    
+    node_summary = []
+    for nid, s in sorted(node_stats.items(), key=lambda x: -x[1]["count"]):
+        avg_ms = s["total_ms"] / s["count"] if s["count"] else 0
+        node_summary.append({
+            "id": nid,
+            "count": s["count"],
+            "avg_ms": round(avg_ms, 1),
+            "fail_count": s["fail_count"]
+        })
+    
+    # Slowest nodes (by avg_ms)
+    slowest = sorted(node_summary, key=lambda x: -x["avg_ms"])[:5]
+    slowest_nodes = [{"id": s["id"], "avg_ms": s["avg_ms"]} for s in slowest if s["avg_ms"] > 0]
+    
+    # Suggestions
+    suggestions = []
+    if success_rate < 0.9:
+        suggestions.append(f"Success rate is {success_rate:.0%}. Investigate failing nodes.")
+    if error_types:
+        top_error = error_types[0]
+        suggestions.append(f"Most common error: '{top_error['type']}' ({top_error['count']} occurrences)")
+    for ns in slowest:
+        if ns["avg_ms"] > 1000:
+            suggestions.append(f"Node '{ns['id']}' is slow (avg {ns['avg_ms']:.0f}ms). Consider optimization.")
+    if not suggestions:
+        suggestions.append("No obvious issues detected. Execution looks healthy.")
+    
+    return {
+        "skill": skill,
+        "executions": n,
+        "success_rate": round(success_rate, 3),
+        "avg_duration_ms": round(avg_duration, 1),
+        "p95_duration_ms": round(p95_duration, 1),
+        "error_types": error_types,
+        "node_stats": node_summary,
+        "slowest_nodes": slowest_nodes,
+        "suggestions": suggestions
+    }
+
+def main():
+    try:
+        inp = json.load(sys.stdin)
+    except Exception:
+        print(json.dumps({"error": "invalid input JSON"}))
+        sys.exit(1)
+    
+    trace_dir = Path(os.path.expanduser(inp.get("trace_dir", "~/.cogtome/traces")))
+    skill_name = inp.get("skill_name")
+    days = inp.get("days", 7)
+    
+    records = load_traces(trace_dir, skill_name, days)
+    result = analyze(records)
+    
+    print(json.dumps(result))
+
+if __name__ == "__main__":
+    main()

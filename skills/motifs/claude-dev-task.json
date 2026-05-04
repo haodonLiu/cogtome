@@ -1,0 +1,42 @@
+{
+  "name": "claude-dev-task",
+  "type": "motif",
+  "version": "2.0",
+  "required_units": ["claude-dev-launch"],
+  "description": "Launch Claude Code to execute a development task (async, long-running). Claude Code will self-notify on completion.",
+  "graph": {
+    "nodes": [
+      {
+        "id": "start",
+        "type": "start",
+        "position": { "x": 0, "y": 100 }
+      },
+      {
+        "id": "launch",
+        "type": "unit",
+        "unit": "claude-dev-launch",
+        "input": {
+          "workdir": "/home/haodont/cogtome",
+          "task_file": "/home/haodont/cogtome/.claude-task.md",
+          "notify_target": "o9cq800-ENk6tIEFIO28Soe9-a2g@im.wechat",
+          "notify_account": "26994915ec33-im-bot",
+          "summary": "测试运行完成"
+        },
+        "position": { "x": 200, "y": 100 }
+      },
+      {
+        "id": "done",
+        "type": "return",
+        "values": {
+          "pid": "${steps.launch.output.pid}",
+          "log_file": "${steps.launch.output.log_file}"
+        },
+        "position": { "x": 400, "y": 100 }
+      }
+    ],
+    "edges": [
+      { "source": "start", "target": "launch" },
+      { "source": "launch", "target": "done" }
+    ]
+  }
+}

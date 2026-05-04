@@ -1,0 +1,33 @@
+#!/bin/bash
+# Pre-commit hook: scan staged files for sensitive information using gitleaks
+# This script is tracked in git via scripts/pre-commit
+# Symlinked to .git/hooks/pre-commit on setup
+
+set -e
+
+GITLEAKS_BIN="${GITLEAKS_BIN:-$HOME/bin/gitleaks}"
+
+# Check if gitleaks is available
+if ! command -v "$GITLEAKS_BIN" &> /dev/null; then
+    echo "⚠️  gitleaks not found, skipping scan (install: brew install gitleaks or see docs/SECURITY.md)"
+    exit 0
+fi
+
+echo "🔍 Running gitleaks scan on staged files..."
+
+# Use detect --staged to scan only staged changes (not committed history)
+# --no-git because we want staged files specifically, not full repo scan
+# --config points to project config with custom rules
+RESULT=$($GITLEAKS_BIN detect --staged --verbose --redact --config .gitleaks.toml 2>&1) || true
+echo "$RESULT"
+
+if echo "$RESULT" | grep -q "leaks found: [1-9]"; then
+    echo ""
+    echo "❌ gitleaks detected sensitive information — commit blocked."
+    echo "💡 If this is a false positive, add to .gitleaksignore"
+    echo "💡 To bypass (not recommended): git commit --no-verify"
+    exit 1
+fi
+
+echo "✅ No sensitive info detected."
+exit 0

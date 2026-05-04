@@ -1,0 +1,22 @@
+{
+  "name": "claude-dev-launch",
+  "entry": "bin/claude-dev-launch",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "workdir": { "type": "string" },
+      "task_file": { "type": "string" },
+      "notify_target": { "type": "string" },
+      "notify_account": { "type": "string" },
+      "summary": { "type": "string" }
+    },
+    "required": ["workdir", "task_file", "notify_target", "notify_account", "summary"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "pid": { "type": "string" },
+      "log_file": { "type": "string" }
+    }
+  }
+}

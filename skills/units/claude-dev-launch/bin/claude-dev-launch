@@ -1,0 +1,47 @@
+#!/bin/bash
+# Unit: claude-dev-launch
+# Launches Claude Code for a development task (async, long-running)
+# Input:  {"workdir": "string", "task_file": "string", "notify_target": "string", "notify_account": "string", "summary": "string"}
+# Output: {"pid": "string", "log_file": "string"}
+
+read -r input
+
+workdir=$(echo "$input" | grep -o '"workdir"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/"workdir"[[:space:]]*:[[:space:]]*"//;s/"$//')
+task_file=$(echo "$input" | grep -o '"task_file"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/"task_file"[[:space:]]*:[[:space:]]*"//;s/"$//')
+notify_target=$(echo "$input" | grep -o '"notify_target"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/"notify_target"[[:space:]]*:[[:space:]]*"//;s/"$//')
+notify_account=$(echo "$input" | grep -o '"notify_account"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/"notify_account"[[:space:]]*:[[:space:]]*"//;s/"$//')
+summary=$(echo "$input" | grep -o '"summary"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/"summary"[[:space:]]*:[[:space:]]*"//;s/"$//')
+
+if [ -z "$workdir" ] || [ -z "$task_file" ]; then
+  echo "{\"error\": \"missing workdir or task_file\"}" >&2
+  exit 1
+fi
+
+log_file="$workdir/.claude-output.log"
+
+# Build the notification message (JSON-escape the summary)
+summary_escaped=$(printf '%s' "$summary" | sed 's/\\/\\\\/g; s/"/\\"/g')
+
+# Use a temp script to avoid quote hell
+cat > "$workdir/.claude-launch.sh" << 'OUTER_EOF'
+#!/bin/bash
+cd WORKDIR_PLACEHOLDER
+nohup claude --permission-mode bypassPermissions --print "Read TASK_FILE_PLACEHOLDER and execute. Commit on milestones. Send completion to: openclaw message send --channel openclaw-weixin --target NOTIFY_TARGET_PLACEHOLDER --account NOTIFY_ACCOUNT_PLACEHOLDER --message SUMMARY_PLACEHOLDER" > LOG_FILE_PLACEHOLDER 2>&1 &
+echo $!
+OUTER_EOF
+
+# Replace placeholders
+sed -i "s|WORKDIR_PLACEHOLDER|$workdir|g" "$workdir/.claude-launch.sh"
+sed -i "s|TASK_FILE_PLACEHOLDER|$task_file|g" "$workdir/.claude-launch.sh"
+sed -i "s|NOTIFY_TARGET_PLACEHOLDER|$notify_target|g" "$workdir/.claude-launch.sh"
+sed -i "s|NOTIFY_ACCOUNT_PLACEHOLDER|$notify_account|g" "$workdir/.claude-launch.sh"
+sed -i "s|SUMMARY_PLACEHOLDER|$summary_escaped|g" "$workdir/.claude-launch.sh"
+sed -i "s|LOG_FILE_PLACEHOLDER|$log_file|g" "$workdir/.claude-launch.sh"
+
+chmod +x "$workdir/.claude-launch.sh"
+pid=$(bash "$workdir/.claude-launch.sh")
+
+# Clean up temp script
+rm -f "$workdir/.claude-launch.sh"
+
+echo "{\"pid\": \"$pid\", \"log_file\": \"$log_file\"}"

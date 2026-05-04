@@ -1,0 +1,58 @@
+name: reflection-engine
+description: |
+  LLM-powered reflection analysis engine. Takes tasks, patterns, and traces,
+  performs causal reasoning, identifies real behavioral patterns, and produces
+  actionable improvement suggestions.
+
+input_schema:
+  type: object
+  required: [tasks]
+  properties:
+    tasks:
+      type: array
+      description: List of extracted tasks from task-extractor
+    patterns:
+      type: object
+      description: Raw pattern data from pattern-finder (for context)
+    traces:
+      type: object
+      description: Trace analysis output from trace-analyzer
+    mode:
+      type: string
+      enum: [reflection, review]
+      default: reflection
+    date_range:
+      type: object
+      description: Date range of the analysis window
+      properties:
+        start: { type: string }
+        end: { type: string }
+
+output_schema:
+  type: object
+  properties:
+    summary:
+      type: object
+      description: Quantitative summary
+      properties:
+        completed: { type: integer }
+        blocked: { type: integer }
+        in_progress: { type: integer }
+        uncertain: { type: integer }
+        fake_completed: { type: integer }
+        completion_rate: { type: string }
+    patterns:
+      type: array
+      description: Identified behavioral patterns with root cause analysis
+    abstractions:
+      type: array
+      description: Suggested automations/templates with ROI assessment
+    risks:
+      type: array
+      description: Predicted下周卡点 with mitigation suggestions
+    reflection:
+      type: string
+      description: Natural language summary of the week
+    report:
+      type: string
+      description: Rendered markdown report

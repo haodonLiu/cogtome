@@ -1,0 +1,39 @@
+---
+name: trace-analyzer
+description: 分析 COGTOME trace 日志，生成统计摘要和改进建议。
+input_schema:
+  type: object
+  properties:
+    skill_name:
+      type: string
+      description: 要分析的 skill 名称（可选，不填则分析所有 skill）
+    days:
+      type: number
+      default: 7
+      description: 回看天数
+    trace_dir:
+      type: string
+      default: "~/.cogtome/traces"
+      description: trace 文件目录
+output_schema:
+  type: object
+  properties:
+    skill:
+      type: string
+    executions:
+      type: number
+    success_rate:
+      type: number
+    avg_duration_ms:
+      type: number
+    p95_duration_ms:
+      type: number
+    error_types:
+      type: array
+    node_stats:
+      type: array
+    slowest_nodes:
+      type: array
+    suggestions:
+      type: array
+---

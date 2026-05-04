@@ -1,0 +1,57 @@
+{
+  "name": "claude-dev-task",
+  "description": "Orchestrate a Claude Code development task: build → test → commit → notify",
+  "version": "1.0.0",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "workdir": {
+        "type": "string",
+        "description": "Working directory for the task"
+      },
+      "task_file": {
+        "type": "string",
+        "description": "Path to .claude-task.md file containing task instructions"
+      },
+      "commit_message": {
+        "type": "string",
+        "description": "Git commit message"
+      },
+      "notify_target": {
+        "type": "string",
+        "description": "WeChat message target (e.g., o9cq800-ENk6tIEFIO28Soe9-a2g@im.wechat)"
+      },
+      "notify_account": {
+        "type": "string",
+        "description": "OpenClaw account ID"
+      },
+      "summary": {
+        "type": "string",
+        "description": "Summary report for the user (must include: ✅ done, 📝 changes, ⚠️ pending, 🔜 next)"
+      }
+    },
+    "required": ["workdir", "task_file", "commit_message", "notify_target", "notify_account", "summary"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "build_ok": {
+        "type": "integer",
+        "description": "Build exit code (0 = success)"
+      },
+      "test_ok": {
+        "type": "integer",
+        "description": "Test exit code (0 = success)"
+      },
+      "commit": {
+        "type": "string",
+        "description": "Git commit output"
+      },
+      "notification": {
+        "type": "string",
+        "description": "Notification send result"
+      }
+    }
+  },
+  "motif": "claude-dev-task"
+}

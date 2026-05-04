@@ -1,0 +1,73 @@
+{
+  "name": "atlas-review",
+  "type": "motif",
+  "version": "1.0",
+  "description": "方案审查与辩论协议 — 通过 Atlas subagent 进行结构化审查，多轮收敛到共识",
+  "executor": "atlas-subagent",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "plan": { "type": "string", "description": "待审查的方案" },
+      "context": { "type": "string", "description": "背景信息（可选）" },
+      "depth": { "type": "string", "enum": ["light", "full"], "default": "full", "description": "审查深度" }
+    },
+    "required": ["plan"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "verdict": { "type": "string", "enum": ["HOLD", "FLAGGED", "REJECTED"] },
+      "recommendation": { "type": "string" },
+      "remaining_concerns": { "type": "array", "items": { "type": "string" } },
+      "rounds": { "type": "integer" }
+    }
+  },
+  "review_protocol": {
+    "rounds": 3,
+    "steps": [
+      {
+        "id": "initial-review",
+        "actor": "atlas",
+        "description": "Atlas 对方案做初始审查，返回 verdict + flags",
+        "output": {
+          "verdict": "HOLD | FLAGGED | REJECTED",
+          "flags": [{ "severity": "fatal | warning | nit", "point": "string", "suggestion": "string" }],
+          "assumptions": ["string"],
+          "failure_modes": ["string"],
+          "strengths": ["string"]
+        }
+      },
+      {
+        "id": "planner-respond",
+        "actor": "planner",
+        "description": "Planner 逐一回应每个 fatal/warning flag",
+        "input": "flags from initial-review",
+        "output": { "responses": [{ "flag_id": "string", "response": "string" }] }
+      },
+      {
+        "id": "synthesize",
+        "actor": "atlas",
+        "description": "Atlas 综合 Planner 回应，给出新 verdict",
+        "output": {
+          "agreed": "boolean",
+          "final_recommendation": "string",
+          "remaining_concerns": ["string"]
+        }
+      }
+    ],
+    "flow": {
+      "initial-review": {
+        "HOLD": "→ output (方案通过)",
+        "REJECTED": "→ output (方案方向性错误)",
+        "FLAGGED": "→ planner-respond"
+      },
+      "synthesize": {
+        "agreed": "→ output",
+        "not_agreed": {
+          "round < 3": "→ initial-review (新一轮)",
+          "round >= 3": "→ output (强制收敛)"
+        }
+      }
+    }
+  }
+}

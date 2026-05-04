@@ -1,0 +1,10 @@
+# gitleaks ignore - file path patterns only
+# See https://github.com/gitleaks/gitleaks/blob/master/docs/configuration/allowlist.md
+
+# Test fixtures
+tests/
+
+# Build artifacts
+webui/node_modules/
+webui/dist/
+target/
