@@ -521,14 +521,6 @@ body {
 }
 
 /* ── Editor Shell ──────────────────────────────────────── */
-.editor-shell {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  background: var(--bg-page);
-  overflow: hidden;
-}
-
 /* Toolbar spans full width */
 .editor-toolbar {
   max-width: 100%;
@@ -546,22 +538,17 @@ body {
 }
 
 /* Full-width editor shell (canvas pages) */
-.editor-shell--full {
-  max-width: 100vw;
+.editor-shell {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 56px);
+  background: var(--bg-page);
   overflow: hidden;
-  margin: -50px;
-  padding: 0;
-  height: 100vh;
-}
-
-.editor-shell--full .editor-toolbar {
-  position: sticky;
-  top: 0;
-  z-index: 50;
-}
-
-.editor-shell--full .editor-body {
-  max-width: 100%;
+  /* Break out of .app-content container */
+  width: 100vw;
+  margin-left: calc(-50vw + 50%);
+  margin-top: -24px;
+  margin-bottom: -24px;
 }
 
 .editor-title {
@@ -1132,4 +1119,382 @@ body {
 
 .floating-property-panel .property-panel .panel-content {
   padding: 14px 16px;
+}
+
+/* ============================================================
+   Unified Responsive Layout System
+   ============================================================ */
+
+/* ── App Shell ──────────────────────────────────────────── */
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--bg-page);
+  color: var(--text-primary);
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  height: 56px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  flex-shrink: 0;
+}
+
+.app-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.app-brand-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--text-primary);
+}
+
+.app-nav {
+  display: flex;
+  gap: 2px;
+}
+
+.app-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  padding: 6px 14px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 500;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+
+.app-nav-link:hover {
+  color: var(--text-primary);
+  background: var(--bg-active);
+}
+
+.app-nav-link.active {
+  color: var(--accent);
+  background: var(--accent-light);
+}
+
+.app-nav-label {
+  display: inline;
+}
+
+.app-main {
+  flex: 1;
+  padding: 24px 32px;
+}
+
+.app-content {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* ── Page Layout ────────────────────────────────────────── */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 24px;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
+}
+
+.page-subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.page-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ── Responsive Card Grid ───────────────────────────────── */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.card-grid--compact {
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+
+/* ── Stats Grid (dashboard) ─────────────────────────────── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+  margin-bottom: 6px;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* ── Search + View Toggle Bar ───────────────────────────── */
+.toolbar-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.search-input {
+  padding: 7px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 13px;
+  min-width: 200px;
+  transition: border-color 0.15s;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.view-toggle {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.view-toggle-btn {
+  padding: 7px 10px;
+  background: var(--bg-card);
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+}
+
+.view-toggle-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ── Trace Dashboard (responsive) ───────────────────────── */
+.trace-shell {
+  display: flex;
+  margin: -24px -32px;
+  height: calc(100vh - 56px);
+}
+
+.trace-sidebar {
+  width: 240px;
+  border-right: 1px solid var(--border);
+  padding: 20px 16px;
+  overflow-y: auto;
+  background: var(--bg-card);
+  flex-shrink: 0;
+}
+
+.trace-sidebar-title {
+  margin: 0 0 16px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-tertiary);
+}
+
+.trace-sidebar-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: var(--transition);
+  color: var(--text-primary);
+}
+
+.trace-sidebar-item:hover {
+  background: var(--bg-active);
+}
+
+.trace-sidebar-item.active {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+.trace-main {
+  flex: 1;
+  padding: 24px;
+  overflow-y: auto;
+  min-width: 0;
+}
+
+/* ── Responsive Breakpoints ─────────────────────────────── */
+
+/* Tablet (< 1024px) */
+@media (max-width: 1023px) {
+  .app-main {
+    padding: 20px 24px;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .trace-shell {
+    margin: -20px -24px;
+    height: calc(100vh - 56px);
+  }
+
+  .trace-sidebar {
+    width: 200px;
+  }
+
+  .editor-shell {
+    height: calc(100vh - 56px);
+    margin-top: -20px;
+    margin-bottom: -20px;
+  }
+}
+
+/* Mobile (< 768px) */
+@media (max-width: 767px) {
+  .app-header {
+    padding: 0 16px;
+    height: 48px;
+  }
+
+  .app-nav-link {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  .app-nav-label {
+    display: none;
+  }
+
+  .app-main {
+    padding: 16px;
+  }
+
+  .app-content {
+    max-width: 100%;
+  }
+
+  .page-title {
+    font-size: 18px;
+  }
+
+  .card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .card-grid--compact {
+    grid-template-columns: 1fr;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .stat-value {
+    font-size: 22px;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .toolbar-bar {
+    width: 100%;
+  }
+
+  .search-input {
+    min-width: 0;
+    flex: 1;
+  }
+
+  /* Trace: stack sidebar on top */
+  .trace-shell {
+    flex-direction: column;
+    margin: -16px;
+    height: auto;
+    min-height: calc(100vh - 48px);
+  }
+
+  .trace-sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding: 12px 16px;
+    max-height: 200px;
+  }
+
+  .trace-main {
+    padding: 16px;
+  }
+
+  .editor-shell {
+    height: calc(100vh - 48px);
+    margin-top: -16px;
+    margin-bottom: -16px;
+  }
+}
+
+/* Small mobile (< 480px) */
+@media (max-width: 479px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
 }

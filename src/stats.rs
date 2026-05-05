@@ -89,6 +89,7 @@ impl StatsStore {
     }
 
     /// Record a call to an assembly
+    #[allow(dead_code)]
     pub fn record_call(&mut self, assembly: &str) {
         let stats = self.assemblies.entry(assembly.to_string()).or_default();
         stats.call_count += 1;

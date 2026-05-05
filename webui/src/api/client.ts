@@ -92,3 +92,37 @@ export async function validateMotif(name: string): Promise<ValidationResult> {
     method: 'POST',
   });
 }
+
+// Traces API
+export interface TraceInfo {
+  skill: string;
+  trace_count: number;
+  last_trace_at: string | null;
+}
+
+export interface TraceNode {
+  id: string;
+  node_type: string;
+  ok: boolean;
+  ms: number | null;
+  exit_code: number | null;
+  error: string | null;
+}
+
+export interface TraceDetail {
+  trace_id: string;
+  skill: string;
+  status: string;
+  duration_ms: number | null;
+  started_at: string | null;
+  completed_at: string | null;
+  nodes: TraceNode[];
+}
+
+export async function listTraces(): Promise<TraceInfo[]> {
+  return fetchJson<TraceInfo[]>(`${API_BASE}/traces`);
+}
+
+export async function getTracesForSkill(skill: string): Promise<TraceDetail[]> {
+  return fetchJson<TraceDetail[]>(`${API_BASE}/traces/${encodeURIComponent(skill)}`);
+}

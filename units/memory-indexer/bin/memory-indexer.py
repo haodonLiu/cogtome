@@ -10,6 +10,7 @@ days = data.get('days')
 start_date = data.get('start_date')
 end_date = data.get('end_date')
 include_special = data.get('include_special', [])
+scan_mode = data.get('scan_mode', 'full')
 
 files = []
 range_start = range_end = ''
@@ -48,9 +49,15 @@ else:
     sys.exit(1)
 
 contents = []
-for fpath in files:
-    with open(fpath) as f:
-        contents.append({'path': fpath, 'date': os.path.basename(fpath).replace('.md',''), 'content': f.read()})
+
+# Fast path: single file, skip heavier processing
+if scan_mode == 'single_day' and len(files) == 1:
+    with open(files[0]) as f:
+        contents.append({'path': files[0], 'date': os.path.basename(files[0]).replace('.md',''), 'content': f.read()})
+else:
+    for fpath in files:
+        with open(fpath) as f:
+            contents.append({'path': fpath, 'date': os.path.basename(fpath).replace('.md',''), 'content': f.read()})
 
 for sf in include_special:
     if os.path.isfile(sf):

@@ -1,6 +1,5 @@
 use crate::discovery::SkillsDir;
 use crate::engine::{MotifManifestV2, StructureManifest};
-use crate::error::{CogtomeError, ErrorCode, ErrorLayer};
 use anyhow::{Context, Result};
 use serde_json::Value;
 use std::path::Path;
@@ -25,24 +24,14 @@ pub fn validate_input(input: &Value, schema: &Value) -> Result<()> {
 /// Validation error with detailed context
 #[derive(Debug)]
 pub struct ValidationError {
-    pub path: String,
     pub message: String,
 }
 
 impl ValidationError {
-    pub fn new(path: &str, message: &str) -> Self {
+    pub fn new(message: &str) -> Self {
         Self {
-            path: path.to_string(),
             message: message.to_string(),
         }
-    }
-
-    pub fn into_error(self) -> CogtomeError {
-        CogtomeError::new(
-            ErrorLayer::Validation,
-            ErrorCode::EValidation,
-            format!("[{}] {}", self.path, self.message),
-        )
     }
 }
 
@@ -53,7 +42,7 @@ pub fn validate_motif(motif: &MotifManifestV2) -> Vec<ValidationError> {
 
     // Validate graph structure
     if let Err(e) = motif.graph.validate() {
-        errors.push(ValidationError::new("graph", &e.to_string()));
+        errors.push(ValidationError::new(&e.to_string()));
     }
 
     errors
@@ -89,16 +78,14 @@ pub fn validate_structure(structure: &StructureManifest) -> Vec<ValidationError>
     // Validate structure has at least one motif
     if structure.motifs.is_empty() {
         errors.push(ValidationError::new(
-            "motifs",
             "structure must have at least one motif reference",
         ));
     }
 
     // Validate motif references have names
-    for (idx, motif_ref) in structure.motifs.iter().enumerate() {
+    for motif_ref in &structure.motifs {
         if motif_ref.name.is_empty() {
             errors.push(ValidationError::new(
-                &format!("motifs[{}]", idx),
                 "motif reference must have a name",
             ));
         }
@@ -117,7 +104,6 @@ pub fn validate_structure_motif_references(
     for motif_ref in &structure.motifs {
         if skills.find_motif(&motif_ref.name).is_none() {
             errors.push(ValidationError::new(
-                &format!("motifs.{}", motif_ref.name),
                 &format!("Referenced motif '{}' not found in skills/motifs/", motif_ref.name),
             ));
         }

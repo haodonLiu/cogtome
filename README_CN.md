@@ -1,4 +1,4 @@
-<img src="cover.jpg" width="400" alt="COGTOME" />
+<img src="docs/cover.jpg" width="400" alt="COGTOME" />
 
 > [English](README.md) | 中文版本
 
@@ -17,13 +17,12 @@
 
 1. [什么是 COGTOME](#什么是-cogtome)
 2. [核心特性](#核心特性)
-3. [架构](#架构)
-4. [快速开始](#快速开始)
+3. [快速开始](#快速开始)
+4. [打包分发](#打包分发)
 5. [项目结构](#项目结构)
 6. [CLI 参考](#cli-参考)
 7. [对比](#对比)
 8. [设计原则](#设计原则)
-9. [阶段状态](#阶段状态)
 
 ---
 
@@ -57,90 +56,31 @@ Agent 意图  ->  COGTOME Structure  ->  保证执行
 | **进程隔离** | 每个工具在独立 OS 进程中执行，超时、临时目录沙箱 |
 | **零重写适配** | Python 脚本、Bash 命令只要支持 JSON stdin/stdout 即可成为 Unit |
 | **JSON Schema 契约** | 输入输出自动校验 |
-| **DAG 工作流** | Motif 支持 `if` 分支、`foreach` 循环、并行执行 |
-| **MCP Bridge** | 将 MCP Server 作为 COGTOME Unit 运行 |
-
----
-
-## 架构
-
-COGTOME 采用三层执行模型：
-
-```
-Agent (自然语言意图)
-        |
-        v
-+---------------------+
-|     Structure       |
-|  (skills/ 或 assemblies/)
-|  名称、描述、Schema  |
-+---------+-----------+
-          | DAG 执行引擎
-          v
-+---------------------+
-|       Motif         |
-|  JSON DAG 编排       |
-|  节点：start/unit/if |
-|  /match/foreach/    |
-|  fork/join/return   |
-+---------+-----------+
-          | IPC (fork+exec, stdin/stdout JSON)
-          v
-+---------------------+
-|        Unit         |
-|  原子执行 (独立进程)  |
-|  任意语言，JSON I/O   |
-+---------------------+
-```
-
-### 层级概览
-
-| 层级 | 作用 | Agent 可见？ |
-|-------|---------|---------------|
-| **Structure** | 对外暴露的能力，含描述和 Schema | 是 |
-| **Motif** | JSON DAG 编排逻辑 | 否 |
-| **Unit** | 原子可执行文件 | 否 |
-
-### 核心纪律
-
-1. **Unit 之间绝不相互调用** — 运行时通过 `COGTOME_UNIT_MODE=1` 阻止递归调用。
-2. **所有跨层调用通过运行时 IPC** — 禁止直接耦合。
-3. **每个边界都有 Schema 校验** — 坏输入尽早失败。
+| **DAG 工作流** | Motif 支持 `if` 分支、`foreach` 循环、`fork/join` 并行执行 |
+| **MCP 原生** | 原生运行 MCP Server，支持 stdio 模式和 Bridge 模式 |
+| **WebUI** | 内置 Web 管理界面，浏览 Structures/Motifs/Units/Traces |
+| **Trace 可视化** | 执行链路追踪 + Dashboard，定位性能瓶颈 |
 
 ---
 
 ## 快速开始
 
-### 1. 构建
-
 ```bash
 git clone https://github.com/haodonLiu/cogtome.git
 cd cogtome
-cargo build --release
+
+just build    # 构建
+just start    # 启动 WebUI → http://localhost:3334
+just run <name>  # 运行 skill
 ```
 
-### 2. 运行示例
+---
+
+## 打包分发
 
 ```bash
-./target/release/cogtome discover
-./target/release/cogtome run text-processing --input '{"text":"hello"}'
-./target/release/cogtome motif run browser-fetch --input '{"url":"https://example.com"}'
-./target/release/cogtome unit run text-uppercase --input '{"text":"hello"}'
-```
-
-### 3. MCP Bridge
-
-```bash
-./target/release/cogtome mcp-bridge \
-  --server "npx -y @modelcontextprotocol/server-filesystem /tmp" \
-  --tool list_allowed_directories
-```
-
-### 4. 环境变量
-
-```bash
-export COGTOME_SKILLS_DIR=./skills   # Structures 目录
-export COGTOME_TIMEOUT=60            # Unit 执行超时
+just deb   # Linux .deb
+just win   # Windows .exe
 ```
 
 ---
@@ -149,32 +89,30 @@ export COGTOME_TIMEOUT=60            # Unit 执行超时
 
 ```
 cogtome/
-|-- src/                    # Runtime 源码 (Rust)
-|   |-- main.rs             # CLI 入口 (clap)
-|   |-- api.rs              # HTTP API 服务器 (axum)
-|   |-- assembly.rs         # Assembly 注册表
-|   |-- mcp_server.rs       # MCP Server (JSON-RPC 2.0)
-|   |-- discovery.rs        # 目录扫描
-|   |-- config.rs           # 配置文件加载
-|   |-- engine/             # 执行引擎
-|   |   |-- mod.rs          # GraphMotifEngine + StructureExecutor
-|   |   |-- graph.rs        # 图验证
-|   |   |-- unit_runner.rs  # Unit 执行器 (fork+exec)
-|   |   |-- mcp_bridge.rs   # MCP Bridge
-|   |-- context/            # 执行上下文
-|       |-- expression.rs   # 表达式求值
-|       |-- variables.rs    # 变量解析
-|-- skills/                 # Skills 目录（运行时加载）
-|   |-- <name>/
-|   |   |-- SKILL.md        # Structure 定义
-|   |   |-- motifs/         # Motifs
-|   |   |-- units/          # Units
-|-- assemblies/             # MCP Server assemblies
-|   |-- <name>/
-|   |   |-- manifest.json
-|   |   |-- workflow.json
-|-- development/           # 技术规格、编写指南
-|-- cogtome.toml           # 运行时配置
+├── src/                    # Rust 源码
+│   ├── main.rs             # CLI 入口（clap）
+│   ├── api.rs              # HTTP API + WebUI 静态服务（axum）
+│   ├── mcp_server.rs       # MCP Server（JSON-RPC 2.0 stdio）
+│   ├── engine/             # 执行引擎（GraphMotifEngine, UnitRunner）
+│   ├── context/            # 执行上下文（变量解析、表达式求值）
+│   ├── discovery.rs        # 目录扫描
+│   ├── config.rs           # cogtome.toml 配置加载
+│   └── assembly.rs         # Assembly 注册表
+├── webui/                  # 前端（React + TypeScript）
+├── skills/                 # Skills 目录（运行时加载）
+│   ├── units/              # Units（原子执行体）
+│   ├── motifs/             # Motifs（JSON DAG 编排）
+│   └── structures/         # Structures（业务结构）
+├── assemblies/             # MCP Server Assemblies
+├── units/                  # 独立 Units（含构建产物）
+├── packaging/              # 打包脚本（deb, windows）
+├── docs/                   # 文档（用户手册、技术规格、设计笔记）
+├── scripts/                # 工具脚本
+├── tests/                  # 集成测试
+├── Cargo.toml              # Rust 项目配置
+├── build.rs                # 构建脚本（嵌入 git hash）
+├── justfile                # 构建命令
+└── cogtome.toml            # 运行时配置
 ```
 
 ---
@@ -182,20 +120,14 @@ cogtome/
 ## CLI 参考
 
 ```bash
-cogtome discover                              # 扫描所有 Structure
-cogtome run <structure> --input <json>      # 运行 Structure
-cogtome motif run <name> --input <json>      # 运行 Motif
-cogtome structure run <name> --input <json> # 运行 Structure
-cogtome unit run <name> --input <json>       # 运行 Unit
-cogtome serve --port 8080                     # 启动 REST API
-cogtome mcp-bridge --server <cmd> --tool <name>  # 运行 MCP Server 为 Unit
-cogtome mcp-server --assemblies <dir>        # 启动 MCP Server (stdio 模式)
-cogtome pack <name>                           # 打包为 .cogtome
-cogtome install <file.cogtome>               # 安装包
-cogtome reload                                # 热重载
-cogtome validate <path>                       # 验证 manifest
-cogtome stats                                 # Assembly 调用热力图
+cogtome run <name> --input <json>    # 运行 skill / unit / motif
+cogtome discover                     # 列出所有 skill
+cogtome serve --port 3334            # 启动 WebUI + API
+cogtome pack <name>                  # 打包为 .cogtome
+cogtome install <file.cogtome>       # 安装
 ```
+
+完整命令参考（MCP、Trace、validate 等高级功能）→ [docs/CLI_REFERENCE.md](./docs/CLI_REFERENCE.md)
 
 ---
 
@@ -206,7 +138,8 @@ cogtome stats                                 # Assembly 调用热力图
 | **主要目标** | 安全运行现有脚本 | 云端 AI 代码沙箱 | 协议标准 | Python 框架 | 人类工作流 |
 | **是否需要重写工具** | 否 | Python SDK | 是 | Python 包装器 | 通常需要 |
 | **进程隔离** | 分层后端 | MicroVM | 取决于宿主 | 进程内 | 服务端 |
-| **Agent 原生接口** | CLI | Python/JS SDK | 协议 | Python API | GUI/API |
+| **可观测性** | Trace + Dashboard | 基础 | 无 | 回调 | 好 |
+| **Agent 原生接口** | CLI + WebUI | Python/JS SDK | 协议 | Python API | GUI/API |
 | **最适合** | 本地脚本沙箱 | 远程不受信代码 | 跨平台工具 | Python 应用集成 | 业务自动化 |
 
 ---
@@ -222,40 +155,12 @@ cogtome stats                                 # Assembly 调用热力图
 
 ---
 
-## 阶段状态
-
-### Phase 1: 核心运行时 Done
-
-- [x] 三层执行模型 (Structure -> Motif -> Unit)
-- [x] CLI 框架 (discover, run, unit/motif/structure)
-- [x] Unit 执行 (fork+exec, stdin/stdout JSON, timeout, temp sandbox)
-- [x] JSON Motif 解析与执行 (DAG graph)
-- [x] Structure 发现 (SKILL.md front-matter parsing)
-- [x] `foreach` 循环、`if` 条件执行、错误策略
-- [x] HTTP API 服务器、打包/安装、MCP Bridge、MCP Server
-- [x] Assembly 注册表、热力图、Graceful shutdown
-
-### Phase 2: 易用性 Planned
-
-- [ ] 完整集成测试覆盖 (test_suite/)
-- [ ] `cogtome run` 稳定跑通 100 次
-- [ ] Motif 内联脚本节点、`cogtome wrap` 一键迁移工具
-
-### Phase 3: 可观测性 Planned
-
-- [ ] 执行链路日志、Checkpoint 节点、Prometheus 指标
-
-### Phase 4: 集成 Planned
-
-- [ ] KimiCLI bridge、OpenClaw gateway、文件系统自动重载
-
----
-
-## 相关链接
+## 文档
 
 - [用户手册](./docs/USER_MANUAL.md)
-- [技术规格](./development/TECHNICAL_SPEC.md)
-- [编写指南](./development/SKILL_AUTHORING_GUIDE.md)
+- [技术规格](./docs/SPEC.md)
+- [贡献指南](./docs/CONTRIBUTING.md)
+- [安全说明](./docs/SECURITY.md)
 
 ---
 

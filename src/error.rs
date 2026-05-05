@@ -30,13 +30,12 @@ impl fmt::Display for ErrorLayer {
 /// Error codes for machine-readable error categorization.
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[allow(dead_code)]
 pub enum ErrorCode {
     /// E_RUNTIME: internal runtime error
     ERuntime,
     /// E_MOTIF_PARSE: failed to parse motif manifest
     EMotifParse,
-    /// E_MOTIF_EXEC: motif execution failed
-    EMotifExec,
     /// E_UNIT_NOT_FOUND: requested unit does not exist
     EUnitNotFound,
     /// E_UNIT_EXEC: unit process execution failed
@@ -61,10 +60,6 @@ pub enum ErrorCode {
     EStructureNotFound,
     /// E_MOTIF_NOT_FOUND: requested motif does not exist
     EMotifNotFound,
-    /// E_FOREACH_LIMIT: foreach iteration limit exceeded
-    EForeachLimit,
-    /// E_MAX_ITERATIONS_HARD: absolute max_iterations_hard limit exceeded
-    EMaxIterationsHard,
 }
 
 impl fmt::Display for ErrorCode {
@@ -72,7 +67,6 @@ impl fmt::Display for ErrorCode {
         match self {
             ErrorCode::ERuntime => write!(f, "E_RUNTIME"),
             ErrorCode::EMotifParse => write!(f, "E_MOTIF_PARSE"),
-            ErrorCode::EMotifExec => write!(f, "E_MOTIF_EXEC"),
             ErrorCode::EUnitNotFound => write!(f, "E_UNIT_NOT_FOUND"),
             ErrorCode::EUnitExec => write!(f, "E_UNIT_EXEC"),
             ErrorCode::EUnitTimeout => write!(f, "E_UNIT_TIMEOUT"),
@@ -85,32 +79,6 @@ impl fmt::Display for ErrorCode {
             ErrorCode::EComplexNotFound => write!(f, "E_COMPLEX_NOT_FOUND"),
             ErrorCode::EStructureNotFound => write!(f, "E_STRUCTURE_NOT_FOUND"),
             ErrorCode::EMotifNotFound => write!(f, "E_MOTIF_NOT_FOUND"),
-            ErrorCode::EForeachLimit => write!(f, "E_FOREACH_LIMIT"),
-            ErrorCode::EMaxIterationsHard => write!(f, "E_MAX_ITERATIONS_HARD"),
-        }
-    }
-}
-
-/// Unit exit code semantics.
-#[derive(Debug, Clone, Copy)]
-pub enum ExitCode {
-    Success = 0,
-    /// Exit code 1: input error — do not retry
-    InputError = 1,
-    /// Exit code 2: retryable error — may be retried
-    Retryable = 2,
-    /// Exit code 3: dependency unavailable — do not retry
-    DepUnavailable = 3,
-}
-
-impl From<i32> for ExitCode {
-    fn from(code: i32) -> Self {
-        match code {
-            0 => ExitCode::Success,
-            1 => ExitCode::InputError,
-            2 => ExitCode::Retryable,
-            3 => ExitCode::DepUnavailable,
-            _ => ExitCode::Success, // treat unknown as success for now
         }
     }
 }
@@ -149,14 +117,6 @@ impl CogtomeError {
 
     pub fn layer_runtime() -> Self {
         Self::new(ErrorLayer::Runtime, ErrorCode::ERuntime, "Runtime error")
-    }
-
-    pub fn layer_unit() -> Self {
-        Self::new(ErrorLayer::Unit, ErrorCode::EUnitExec, "Unit execution error")
-    }
-
-    pub fn layer_motif() -> Self {
-        Self::new(ErrorLayer::Motif, ErrorCode::EMotifExec, "Motif execution error")
     }
 
     pub fn layer_validation() -> Self {

@@ -1,8 +1,8 @@
 {
   "name": "daily-summary",
   "type": "motif",
-  "version": "2.0",
-  "required_units": ["memory-indexer", "task-extractor", "pattern-finder", "report-writer"],
+  "version": "3.0",
+  "required_units": ["memory-indexer", "task-extractor", "report-writer"],
   "graph": {
     "nodes": [
       {
@@ -22,17 +22,19 @@
         "unit": "memory-indexer",
         "input": {
           "memory_base_path": "${params.memory_base_path}",
-          "date": "${params.date}"
+          "date": "${params.date}",
+          "scan_mode": "single_day"
         },
         "position": { "x": 400, "y": 50 }
       },
       {
-        "id": "reflection_index",
-        "type": "unit",
-        "unit": "memory-indexer",
+        "id": "reflection",
+        "type": "motif",
+        "motif": "daily-summary/daily-reflection",
         "input": {
           "memory_base_path": "${params.memory_base_path}",
-          "days": "${params.days}"
+          "days": "${params.days}",
+          "mode": "reflection"
         },
         "position": { "x": 400, "y": 150 }
       },
@@ -47,26 +49,6 @@
         "position": { "x": 600, "y": 50 }
       },
       {
-        "id": "extract_reflection",
-        "type": "unit",
-        "unit": "task-extractor",
-        "input": {
-          "contents": "${steps.reflection_index.output.contents}",
-          "mode": "reflection"
-        },
-        "position": { "x": 600, "y": 150 }
-      },
-      {
-        "id": "patterns",
-        "type": "unit",
-        "unit": "pattern-finder",
-        "input": {
-          "extracted_tasks": "${steps.extract_reflection.output}",
-          "mode": "reflection"
-        },
-        "position": { "x": 800, "y": 150 }
-      },
-      {
         "id": "report_review",
         "type": "unit",
         "unit": "report-writer",
@@ -76,18 +58,6 @@
           "date": "${params.date}"
         },
         "position": { "x": 800, "y": 50 }
-      },
-      {
-        "id": "report_reflection",
-        "type": "unit",
-        "unit": "report-writer",
-        "input": {
-          "extracted_tasks": "${steps.extract_reflection.output}",
-          "pattern_analysis": "${steps.patterns.output}",
-          "mode": "reflection",
-          "date": "${steps.reflection_index.output.date_range.end}"
-        },
-        "position": { "x": 1000, "y": 150 }
       },
       {
         "id": "return_review",
@@ -104,27 +74,22 @@
         "id": "return_reflection",
         "type": "return",
         "values": {
-          "report": "${steps.report_reflection.output.report}",
-          "summary": "${steps.extract_reflection.output}",
+          "report": "${steps.reflection.output.report}",
+          "summary": "${steps.reflection.output.summary}",
           "mode": "${params.mode}",
-          "patterns": "${steps.patterns.output.repeating_patterns}",
-          "abstractable": "${steps.patterns.output.abstractable_modules}",
-          "date_range": "${steps.reflection_index.output.date_range}"
+          "date_range": "${steps.reflection.output.date_range}"
         },
-        "position": { "x": 1200, "y": 150 }
+        "position": { "x": 600, "y": 150 }
       }
     ],
     "edges": [
       { "source": "start", "target": "route" },
       { "source": "route", "target": "review_index", "label": "review" },
-      { "source": "route", "target": "reflection_index", "label": "reflection" },
+      { "source": "route", "target": "reflection", "label": "reflection" },
       { "source": "review_index", "target": "extract_review" },
-      { "source": "reflection_index", "target": "extract_reflection" },
-      { "source": "extract_reflection", "target": "patterns" },
       { "source": "extract_review", "target": "report_review" },
-      { "source": "patterns", "target": "report_reflection" },
       { "source": "report_review", "target": "return_review" },
-      { "source": "report_reflection", "target": "return_reflection" }
+      { "source": "reflection", "target": "return_reflection" }
     ]
   }
 }

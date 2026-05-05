@@ -7,6 +7,7 @@ import { MotifViewer } from './components/MotifViewer';
 import { MotifEditor } from './components/editors/MotifEditor';
 import { UnitList } from './components/UnitList';
 import { UnitEditor } from './components/editors/UnitEditor';
+import { TraceDashboard } from './components/TraceDashboard';
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
           <Route path="/units" element={<UnitList />} />
           <Route path="/units/new" element={<UnitEditor />} />
           <Route path="/units/:name" element={<UnitEditor />} />
+          <Route path="/traces" element={<TraceDashboard />} />
         </Routes>
       </Layout>
     </HashRouter>

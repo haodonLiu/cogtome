@@ -26,7 +26,8 @@ use tracing::info;
 
 #[derive(Parser)]
 #[command(name = "cogtome")]
-#[command(about = "COGTOME - Agent Runtime Framework")]
+#[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("COGTOME_GIT_HASH"), ")"))]
+#[command(about = "COGTOME — Agent 执行层")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -35,34 +36,37 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// 管理 Unit（原子执行体）
+    #[command(hide = true)]
     Unit {
         #[command(subcommand)]
         command: UnitCommands,
     },
     /// 管理 Motif（编排逻辑）
+    #[command(hide = true)]
     Motif {
         #[command(subcommand)]
         command: MotifCommands,
     },
     /// 管理 Structure（业务结构）
+    #[command(hide = true)]
     Structure {
         #[command(subcommand)]
         command: StructureCommands,
     },
-    /// 运行 Complex（领域 Skill）
+    /// 运行 Skill / Unit / Motif
     Run {
         name: String,
         #[arg(short, long)]
         input: String,
     },
-    /// 发现所有 Complex
+    /// 列出所有可用的 Skill
     Discover,
-    /// 启动 HTTP API 服务器
+    /// 启动 WebUI + API 服务
     Serve {
         #[arg(long, default_value = "3334")]
         port: u16,
     },
-    /// 打包 Skill 到 .cogtome 归档
+    /// 打包 Skill 为 .cogtome 归档
     Pack {
         name: String,
         #[arg(short, long)]
@@ -73,12 +77,15 @@ enum Commands {
         path: String,
     },
     /// 热重载：重新加载所有 Structure 和 Motif 定义
+    #[command(hide = true)]
     Reload,
     /// 验证 Motif 或 Structure manifest 文件
+    #[command(hide = true)]
     Validate {
         path: String,
     },
     /// 通过 MCP Bridge 运行 MCP Server 工具
+    #[command(hide = true)]
     McpBridge {
         /// MCP Server 启动命令，如 "npx -y @modelcontextprotocol/server-filesystem /tmp"
         #[arg(long)]
@@ -97,6 +104,7 @@ enum Commands {
         request_timeout: u64,
     },
     /// 启动 MCP Server（stdio 模式）
+    #[command(hide = true)]
     McpServer {
         /// Assemblies 目录
         #[arg(long, default_value = "./assemblies")]
@@ -109,6 +117,7 @@ enum Commands {
         timeout: u64,
     },
     /// 显示 Assembly 调用热力图
+    #[command(hide = true)]
     Stats {
         /// 显示详细信息
         #[arg(long)]
@@ -118,6 +127,7 @@ enum Commands {
         gc: bool,
     },
     /// 启动 Trace Dashboard（可观测性可视化）
+    #[command(hide = true)]
     TraceDashboard {
         /// Dashboard 端口
         #[arg(long, default_value = "4321")]
@@ -174,7 +184,7 @@ struct SkillsPaths {
 }
 
 fn resolve_skills_dir(config: &CogtomeConfig) -> SkillsPaths {
-    // 环境变量 > 配置文件 > 默认值
+    // 环境变量 > 配置文件 > 安装路径探测 > 开发环境默认值
     // paths.units 作为 root（向后兼容），motifs 和 structures 作为子目录覆盖
     let root = std::env::var("COGTOME_SKILLS_DIR")
         .map(PathBuf::from)
@@ -185,6 +195,21 @@ fn resolve_skills_dir(config: &CogtomeConfig) -> SkillsPaths {
                 .as_ref()
                 .map(PathBuf::from)
                 .unwrap_or_else(|| {
+                    // 探测安装路径
+                    let exe_dir = std::env::current_exe().ok()
+                        .and_then(|p| p.parent().map(|p| p.to_path_buf()));
+                    if let Some(dir) = &exe_dir {
+                        // Linux deb: /usr/bin/../share/cogtome/skills
+                        let share = dir.join("../share/cogtome/skills");
+                        if share.exists() { return share; }
+                        // macOS .app: Contents/Resources/skills
+                        let app_res = dir.join("../Resources/skills");
+                        if app_res.exists() { return app_res; }
+                        // Portable: next to binary
+                        let local = dir.join("skills");
+                        if local.exists() { return local; }
+                    }
+                    // Development fallback
                     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("skills")
                 })
         });
@@ -378,7 +403,7 @@ async fn main() -> Result<()> {
             let graceful = shutdown::GracefulShutdown::new();
             let token = graceful.token();
 
-            api::start_server_with_shutdown(port, skills.clone(), skills_root.clone(), timeout, sandbox_registry_for_server, token).await?;
+            api::start_server_with_shutdown(port, skills.clone(), timeout, sandbox_registry_for_server, token).await?;
 
             // Log graceful shutdown completion
             if graceful.is_shutdown_requested() {

@@ -1,0 +1,12 @@
+Package: cogtome
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: COGTOME Contributors
+Depends: python3, bash, curl
+Recommends: nodejs, jq
+Description: COGTOME - Agent Runtime Framework
+ COGTOME is a CLI and WebUI application for running agent skills,
+ motifs, and structures. It provides an HTTP API server, MCP server
+ mode, and a web-based structure editor.

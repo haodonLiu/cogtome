@@ -1,5 +1,5 @@
 use crate::discovery::{extract_first_structure, ComplexInfo, SkillsDir};
-use crate::engine::{GraphMotifEngine, StructureExecutor, UnitConcurrency, UnitRunner};
+use crate::engine::{GraphMotifEngine, SandboxRegistry, StructureExecutor, UnitConcurrency, UnitRunner};
 use crate::error::CogtomeError;
 use crate::metrics;
 use crate::services::{
@@ -9,13 +9,15 @@ use crate::services::{
     MotifInfo, StructureInfo, UnitConfig, UnitInfo,
 };
 use axum::{
+    body::Body,
     extract::{Path, State},
-    http::StatusCode,
-    response::{IntoResponse, Json},
+    http::{StatusCode, Uri},
+    response::{IntoResponse, Json, Response},
     routing::{delete, get, post, put},
     Router,
 };
 use tower_http::cors::{Any, CorsLayer};
+use rust_embed::Embed;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -23,8 +25,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
-use tower_http::services::ServeDir;
 use tracing::{error, info};
+
+#[derive(Embed)]
+#[folder = "webui/dist/"]
+struct WebUi;
 
 fn validate_name(name: &str) -> Result<(), CogtomeError> {
     if name.is_empty() || name.contains("..") || name.contains('/') || name.contains('\\') {
@@ -47,43 +52,42 @@ fn load_max_iterations_hard(skills_root: &std::path::Path) -> u32 {
     500
 }
 
-/// Resolve the path to the webui/dist directory.
-fn resolve_webui_dir() -> Option<PathBuf> {
-    // Check relative to the executable (production / standalone)
-    let exe_dir = std::env::current_exe()
-        .ok()?
-        .parent()?
-        .to_path_buf();
-    let candidates = [
-        exe_dir.join("webui/dist"),
-        exe_dir.join("../webui/dist"),
-        exe_dir.join("../../webui/dist"),
-        // Development fallback: relative to the project root (CARGO_MANIFEST_DIR)
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("webui/dist"),
-    ];
-    for path in &candidates {
-        if path.join("index.html").exists() {
-            return Some(path.clone());
+async fn static_handler(uri: Uri) -> Response {
+    let mut path = uri.path().trim_start_matches('/').to_string();
+    if path.is_empty() {
+        path = "index.html".to_string();
+    }
+    match WebUi::get(&path) {
+        Some(content) => {
+            let mime = mime_guess::from_path(&path).first_or_octet_stream();
+            Response::builder()
+                .header("Content-Type", mime.as_ref())
+                .body(Body::from(content.data))
+                .unwrap()
+        }
+        None => {
+            // SPA fallback: serve index.html for unknown routes
+            let index = WebUi::get("index.html").unwrap();
+            Response::builder()
+                .header("Content-Type", "text/html")
+                .body(Body::from(index.data))
+                .unwrap()
         }
     }
-    None
-}
-
-pub async fn start_server(port: u16, skills: SkillsDir, timeout: u64) -> anyhow::Result<()> {
-    let cancel_token = CancellationToken::new();
-    start_server_with_shutdown(port, skills, timeout, cancel_token).await
 }
 
 pub async fn start_server_with_shutdown(
     port: u16,
     skills: SkillsDir,
     timeout: u64,
+    sandbox_registry: SandboxRegistry,
     cancel_token: CancellationToken,
 ) -> anyhow::Result<()> {
     let state = AppState {
         skills,
         timeout,
         concurrency_config: HashMap::new(),
+        sandbox_registry,
         running_tasks: Arc::new(RwLock::new(HashMap::new())),
     };
 
@@ -108,6 +112,9 @@ pub async fn start_server_with_shutdown(
         .route("/api/units/:name", put(put_unit_handler))
         // Validation
         .route("/api/validate/:type/:name", post(validate_handler))
+        // Traces
+        .route("/api/traces", get(list_traces_handler))
+        .route("/api/traces/:skill", get(get_trace_handler))
         .with_state(state);
 
     // Add CORS layer for API endpoints
@@ -116,13 +123,8 @@ pub async fn start_server_with_shutdown(
         .allow_methods(Any)
         .allow_headers(Any));
 
-    let app = if let Some(webui_dir) = resolve_webui_dir() {
-        info!(dir = %webui_dir.display(), "Serving webui static files");
-        app.nest_service("/", ServeDir::new(webui_dir).append_index_html_on_directories(true))
-    } else {
-        info!("Webui dist not found. Run 'cd webui && npm run build' to enable the web UI.");
-        app
-    };
+    let app = app.fallback(static_handler);
+    info!("Serving embedded webui static files");
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -147,6 +149,7 @@ struct AppState {
     skills: SkillsDir,
     timeout: u64,
     concurrency_config: HashMap<String, UnitConcurrency>,
+    sandbox_registry: SandboxRegistry,
     #[allow(dead_code)]
     running_tasks: Arc<RwLock<HashMap<String, RunningTask>>>,
 }
@@ -253,8 +256,10 @@ async fn run_execution(
 ) -> Result<Json<RunResponse>, CogtomeError> {
     let runner = UnitRunner::new_with_config(
         state.skills.clone(),
+        state.skills.root.clone(),
         state.timeout,
         state.concurrency_config.clone(),
+        state.sandbox_registry.clone(),
     );
 
     let result = match req {
@@ -585,4 +590,190 @@ async fn validate_handler(
     };
 
     Ok(Json(result))
+}
+
+// ============================================================================
+// Traces API
+// ============================================================================
+
+#[derive(Debug, Serialize)]
+struct TraceInfo {
+    skill: String,
+    trace_count: usize,
+    last_trace_at: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct TraceDetail {
+    trace_id: String,
+    skill: String,
+    status: String,
+    duration_ms: Option<u64>,
+    started_at: Option<String>,
+    completed_at: Option<String>,
+    nodes: Vec<TraceNode>,
+}
+
+#[derive(Debug, Serialize)]
+struct TraceNode {
+    id: String,
+    node_type: String,
+    ok: bool,
+    ms: Option<u64>,
+    exit_code: Option<i32>,
+    error: Option<String>,
+}
+
+fn get_traces_dir() -> PathBuf {
+    std::env::var("COGTOME_TRACE_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::env::var("HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join(".cogtome")
+                .join("traces")
+        })
+}
+
+async fn list_traces_handler() -> Json<Vec<TraceInfo>> {
+    let traces_dir = get_traces_dir();
+    let mut traces = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir(&traces_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+
+            let skill = path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+
+            let mut trace_count = 0;
+            let mut last_trace_at = None;
+
+            if let Ok(files) = std::fs::read_dir(&path) {
+                for file in files.flatten() {
+                    let file_path = file.path();
+                    if file_path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
+                        // Count lines
+                        if let Ok(content) = std::fs::read_to_string(&file_path) {
+                            let count = content.lines().filter(|l| !l.trim().is_empty()).count();
+                            trace_count += count;
+
+                            // Get last modified time
+                            if let Ok(metadata) = std::fs::metadata(&file_path) {
+                                if let Ok(modified) = metadata.modified() {
+                                    let datetime: chrono::DateTime<chrono::Utc> = modified.into();
+                                    last_trace_at = Some(datetime.to_rfc3339());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if trace_count > 0 {
+                traces.push(TraceInfo {
+                    skill,
+                    trace_count,
+                    last_trace_at,
+                });
+            }
+        }
+    }
+
+    Json(traces)
+}
+
+async fn get_trace_handler(
+    Path(skill): Path<String>,
+) -> Result<Json<Vec<TraceDetail>>, CogtomeError> {
+    validate_name(&skill)?;
+
+    let traces_dir = get_traces_dir().join(&skill);
+    let mut traces = Vec::new();
+
+    if traces_dir.exists() {
+        if let Ok(files) = std::fs::read_dir(&traces_dir) {
+            for file in files.flatten() {
+                let file_path = file.path();
+                if file_path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+                    continue;
+                }
+
+                if let Ok(content) = std::fs::read_to_string(&file_path) {
+                    for line in content.lines() {
+                        if line.trim().is_empty() {
+                            continue;
+                        }
+
+                        if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
+                            let trace_id = val.get("trace_id")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown")
+                                .to_string();
+
+                            let status = val.get("status")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown")
+                                .to_string();
+
+                            let duration_ms = val.get("duration_ms")
+                                .and_then(|v| v.as_u64());
+
+                            let started_at = val.get("started_at")
+                                .and_then(|v| v.as_str())
+                                .map(String::from);
+
+                            let completed_at = val.get("completed_at")
+                                .and_then(|v| v.as_str())
+                                .map(String::from);
+
+                            let nodes = val.get("nodes")
+                                .and_then(|v| v.as_array())
+                                .map(|arr| {
+                                    arr.iter().filter_map(|n| {
+                                        Some(TraceNode {
+                                            id: n.get("id")?.as_str()?.to_string(),
+                                            node_type: n.get("type")
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("unit")
+                                                .to_string(),
+                                            ok: n.get("ok")
+                                                .and_then(|v| v.as_bool())
+                                                .unwrap_or(false),
+                                            ms: n.get("ms").and_then(|v| v.as_u64()),
+                                            exit_code: n.get("exit_code")
+                                                .and_then(|v| v.as_i64())
+                                                .map(|v| v as i32),
+                                            error: n.get("error")
+                                                .and_then(|v| v.as_str())
+                                                .filter(|s| !s.is_empty())
+                                                .map(String::from),
+                                        })
+                                    }).collect()
+                                })
+                                .unwrap_or_default();
+
+                            traces.push(TraceDetail {
+                                trace_id,
+                                skill: skill.clone(),
+                                status,
+                                duration_ms,
+                                started_at,
+                                completed_at,
+                                nodes,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(Json(traces))
 }

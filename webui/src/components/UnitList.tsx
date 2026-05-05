@@ -25,21 +25,21 @@ export function UnitList() {
 
   return (
     <div>
-      <div style={styles.header}>
-        <h2 style={styles.title}>Units</h2>
-        <div style={styles.headerRight}>
+      <div className="page-header">
+        <h2 className="page-title">Units</h2>
+        <div className="page-actions">
           <Button variant="primary">+ New Unit</Button>
           <input
             type="text"
             placeholder="Search units..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            style={styles.searchInput}
+            className="search-input"
           />
-          <div style={styles.viewToggle}>
+          <div className="view-toggle">
             <button
               onClick={() => setViewMode('block')}
-              style={{...styles.viewBtn, ...(viewMode === 'block' ? styles.viewBtnActive : {})}}
+              className={`view-toggle-btn${viewMode === 'block' ? ' active' : ''}`}
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
                 <rect x="1.5" y="1.5" width="5" height="5" rx="1"/>
@@ -50,7 +50,7 @@ export function UnitList() {
             </button>
             <button
               onClick={() => setViewMode('list')}
-              style={{...styles.viewBtn, ...(viewMode === 'list' ? styles.viewBtnActive : {})}}
+              className={`view-toggle-btn${viewMode === 'list' ? ' active' : ''}`}
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
                 <rect x="1.5" y="2" width="14" height="3" rx="1"/>
@@ -70,60 +70,43 @@ export function UnitList() {
           description={search ? 'Try a different search term' : 'Create your first unit to get started'}
         />
       ) : viewMode === 'block' ? (
-        <div style={styles.grid}>
+        <div className="card-grid">
           {filteredUnits.map((unit) => (
-            <Link
-              key={unit.name}
-              to={`/units/${encodeURIComponent(unit.name)}`}
-            >
+            <Link key={unit.name} to={`/units/${encodeURIComponent(unit.name)}`} style={linkStyle}>
               <Card hoverable>
-                <div style={styles.cardHeader}>
-                  <div style={styles.icon}>
+                <div style={cardHeaderStyle}>
+                  <div style={iconStyle}>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <rect x="4" y="4" width="16" height="16" rx="2"/>
                       <rect x="9" y="9" width="6" height="6"/>
                     </svg>
                   </div>
-                  <h3 style={styles.cardTitle}>{unit.name}</h3>
+                  <h3 style={cardTitleStyle}>{unit.name}</h3>
                 </div>
-                <div style={styles.cardMeta}>
-                  <span style={styles.metaItem}>
-                    Timeout: {unit.timeout ?? 30}s
-                  </span>
-                  <span style={styles.metaItem}>
-                    Concurrency: {unit.concurrency ?? 1}
-                  </span>
+                <div style={metaRowStyle}>
+                  <span style={metaItemStyle}>Timeout: {unit.timeout ?? 30}s</span>
+                  <span style={metaItemStyle}>Concurrency: {unit.concurrency ?? 1}</span>
                 </div>
-                <div style={styles.divider} />
-                <p style={styles.description}>
-                  {unit.description || 'No description available'}
-                </p>
+                <div style={dividerStyle} />
+                <p style={descStyle}>{unit.description || 'No description available'}</p>
               </Card>
             </Link>
           ))}
         </div>
       ) : (
-        <div style={styles.list}>
-          <div style={styles.listHeader}>
-            <span style={{...styles.listCell, ...styles.listCellName}}>Name</span>
-            <span style={styles.listCell}>Timeout</span>
-            <span style={styles.listCell}>Concurrency</span>
-            <span style={{...styles.listCell, ...styles.listCellDesc}}>Description</span>
+        <div style={listContainerStyle}>
+          <div style={listHeaderStyle}>
+            <span style={{ ...listCellStyle, ...listCellNameStyle }}>Name</span>
+            <span style={listCellStyle}>Timeout</span>
+            <span style={listCellStyle}>Concurrency</span>
+            <span style={{ ...listCellStyle, ...listCellDescStyle }}>Description</span>
           </div>
           {filteredUnits.map((unit) => (
-            <Link
-              key={unit.name}
-              to={`/units/${encodeURIComponent(unit.name)}`}
-              style={styles.listItem}
-            >
-              <span style={{...styles.listCell, ...styles.listCellName}}>
-                {unit.name}
-              </span>
-              <span style={styles.listCell}>{unit.timeout ?? 30}s</span>
-              <span style={styles.listCell}>{unit.concurrency ?? 1}</span>
-              <span style={{...styles.listCell, ...styles.listCellDesc}}>
-                {unit.description || '-'}
-              </span>
+            <Link key={unit.name} to={`/units/${encodeURIComponent(unit.name)}`} style={listItemStyle}>
+              <span style={{ ...listCellStyle, ...listCellNameStyle }}>{unit.name}</span>
+              <span style={listCellStyle}>{unit.timeout ?? 30}s</span>
+              <span style={listCellStyle}>{unit.concurrency ?? 1}</span>
+              <span style={{ ...listCellStyle, ...listCellDescStyle }}>{unit.description || '-'}</span>
             </Link>
           ))}
         </div>
@@ -132,161 +115,17 @@ export function UnitList() {
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-    gap: 16,
-  },
-  headerRight: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-  },
-  title: {
-    margin: 0,
-    fontSize: 24,
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-  },
-  searchInput: {
-    padding: '8px 16px',
-    borderRadius: 8,
-    border: '1px solid var(--border)',
-    background: 'var(--bg-card)',
-    color: 'var(--text-primary)',
-    fontSize: 14,
-    width: 240,
-  },
-  viewToggle: {
-    display: 'flex',
-    border: '1px solid var(--border)',
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  viewBtn: {
-    padding: '8px 12px',
-    background: 'var(--bg-card)',
-    border: 'none',
-    cursor: 'pointer',
-    fontSize: 14,
-    color: 'var(--text-secondary)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  viewBtnActive: {
-    background: 'var(--accent)',
-    color: '#fff',
-  },
-  grid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-    gap: 16,
-  },
-  cardHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 12,
-  },
-  icon: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    background: 'var(--accent-light)',
-    color: 'var(--accent)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cardTitle: {
-    margin: 0,
-    fontSize: 20,
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-    fontFamily: 'var(--font-sans)',
-  },
-  cardMeta: {
-    display: 'flex',
-    gap: 16,
-    marginBottom: 8,
-  },
-  metaItem: {
-    fontSize: 14,
-    color: 'var(--text-secondary)',
-    fontFamily: 'var(--font-sans)',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: 'var(--border)',
-    marginBottom: 12,
-  },
-  description: {
-    margin: 0,
-    fontSize: 14,
-    color: 'var(--text-secondary)',
-    lineHeight: 1.5,
-    display: '-webkit-box',
-    WebkitLineClamp: 2,
-    WebkitBoxOrient: 'vertical',
-    overflow: 'hidden',
-    fontFamily: 'var(--font-sans)',
-  },
-  // List view styles
-  list: {
-    display: 'flex',
-    flexDirection: 'column',
-    background: 'var(--bg-card)',
-    border: '1px solid var(--border)',
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  listHeader: {
-    display: 'flex',
-    padding: '12px 16px',
-    background: 'var(--bg-page)',
-    borderBottom: '1px solid var(--border)',
-    fontWeight: 600,
-    fontSize: 13,
-    color: 'var(--text-secondary)',
-  },
-  listItem: {
-    display: 'flex',
-    padding: '14px 16px',
-    borderBottom: '1px solid var(--border)',
-    textDecoration: 'none',
-    color: 'inherit',
-    transition: 'var(--transition)',
-    cursor: 'pointer',
-  },
-  listCell: {
-    fontSize: 14,
-    color: 'var(--text-secondary)',
-    fontFamily: 'var(--font-sans)',
-    flexGrow: 0,
-    flexShrink: 1,
-    flexBasis: 100,
-    minWidth: 100,
-  },
-  listCellName: {
-    flexGrow: 1,
-    flexShrink: 1,
-    flexBasis: 200,
-    fontWeight: 500,
-    color: 'var(--text-primary)',
-    fontFamily: 'var(--font-mono)',
-    minWidth: 200,
-  },
-  listCellDesc: {
-    flexGrow: 2,
-    flexShrink: 1,
-    flexBasis: 200,
-    minWidth: 200,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-};
+const linkStyle: React.CSSProperties = { textDecoration: 'none', color: 'inherit' };
+const cardHeaderStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' };
+const iconStyle: React.CSSProperties = { width: 40, height: 40, borderRadius: 8, background: 'var(--accent-light)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' };
+const cardTitleStyle: React.CSSProperties = { margin: 0, fontSize: 18, fontWeight: 600, color: 'var(--text-primary)' };
+const metaRowStyle: React.CSSProperties = { display: 'flex', gap: 16, marginBottom: 8 };
+const metaItemStyle: React.CSSProperties = { fontSize: 13, color: 'var(--text-secondary)' };
+const dividerStyle: React.CSSProperties = { height: 1, backgroundColor: 'var(--border)', marginBottom: 12 };
+const descStyle: React.CSSProperties = { margin: 0, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' };
+const listContainerStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' };
+const listHeaderStyle: React.CSSProperties = { display: 'flex', padding: '12px 16px', background: 'var(--bg-page)', borderBottom: '1px solid var(--border)', fontWeight: 600, fontSize: 12, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.5px' };
+const listItemStyle: React.CSSProperties = { display: 'flex', padding: '14px 16px', borderBottom: '1px solid var(--border)', textDecoration: 'none', color: 'inherit', transition: 'var(--transition)' };
+const listCellStyle: React.CSSProperties = { fontSize: 13, color: 'var(--text-secondary)', flex: '0 0 100px', minWidth: 80 };
+const listCellNameStyle: React.CSSProperties = { flex: '1 1 200px', fontWeight: 500, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' };
+const listCellDescStyle: React.CSSProperties = { flex: '2 1 200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };

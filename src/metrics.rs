@@ -82,38 +82,6 @@ fn record_unit_result(unit_name: &str, status: &str, duration_secs: f64) {
     }
 }
 
-/// Record an HTTP API request.
-#[inline]
-pub fn record_request(req_type: &str, status: &str) {
-    let m = metrics();
-    let mut requests = m.requests.lock().unwrap();
-    let counter = requests.entry((req_type.to_string(), status.to_string()))
-        .or_insert_with(|| AtomicU64::new(0));
-    counter.fetch_add(1, Ordering::Relaxed);
-}
-
-/// Record a foreach iteration completion.
-#[inline]
-pub fn record_foreach_iteration(motif_name: &str, status: &str) {
-    let m = metrics();
-    let mut iters = m.foreach_iters.lock().unwrap();
-    let counter = iters.entry((motif_name.to_string(), status.to_string()))
-        .or_insert_with(|| AtomicU64::new(0));
-    counter.fetch_add(1, Ordering::Relaxed);
-}
-
-/// Set the number of currently running tasks.
-#[inline]
-pub fn set_running_tasks(count: usize) {
-    metrics().running_tasks.store(count as u64, Ordering::Relaxed);
-}
-
-/// Increment running tasks by 1.
-#[inline]
-pub fn inc_running_tasks() {
-    metrics().running_tasks.fetch_add(1, Ordering::Relaxed);
-}
-
 /// Decrement running tasks by 1.
 #[inline]
 pub fn dec_running_tasks() {

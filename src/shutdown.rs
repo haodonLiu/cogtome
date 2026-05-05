@@ -1,6 +1,5 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -85,69 +84,12 @@ impl GracefulShutdown {
         self.shutdown_requested.load(Ordering::SeqCst)
     }
 
-    /// Request immediate shutdown (can be called programmatically)
-    pub fn request_shutdown(&self) {
-        info!("Shutdown requested programmatically");
-        self.shutdown_requested.store(true, Ordering::SeqCst);
-        self.cancel_token.cancel();
-    }
 }
 
 impl Default for GracefulShutdown {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Extension trait for gracefully shutting down tokio tasks
-pub trait GracefulShutdownExt {
-    /// Wait for shutdown with a timeout, then force exit
-    async fn wait_for_shutdown(self, token: CancellationToken, timeout_secs: u64);
-}
-
-impl GracefulShutdownExt for tokio::task::JoinError {
-    async fn wait_for_shutdown(self, token: CancellationToken, timeout_secs: u64) {
-        let _ = token.cancelled().await;
-        tokio::time::sleep(Duration::from_secs(timeout_secs)).await;
-    }
-}
-
-/// Wait for shutdown signal with graceful timeout handling
-pub async fn wait_for_shutdown(token: CancellationToken) {
-    token.cancelled().await;
-}
-
-/// Run a future with graceful shutdown handling.
-/// If shutdown is requested, the future is cancelled after the graceful period.
-pub async fn run_with_shutdown<F>(fut: F, token: CancellationToken, _graceful_secs: u64)
-where
-    F: futures::Future<Output = ()>,
-{
-    tokio::select! {
-        _ = fut => {}
-        _ = token.cancelled() => {
-            info!("Shutdown requested, stopping...");
-        }
-    }
-}
-
-/// Kill a tokio process tree gracefully then forcefully
-pub async fn kill_process_tree(pid: u32, graceful_secs: u64) -> std::io::Result<()> {
-    use std::process::Command;
-
-    // First try graceful SIGTERM
-    Command::new("kill")
-        .args(["-TERM", &pid.to_string()])
-        .spawn()?;
-
-    tokio::time::sleep(Duration::from_secs(graceful_secs)).await;
-
-    // Then force kill if still running
-    let _ = Command::new("kill")
-        .args(["-KILL", &pid.to_string()])
-        .spawn();
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -176,10 +118,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_request_shutdown() {
+    async fn test_cancellation() {
         let shutdown = GracefulShutdown::new();
-        assert!(!shutdown.is_shutdown_requested());
-        shutdown.request_shutdown();
-        assert!(shutdown.is_shutdown_requested());
+        let token = shutdown.token();
+        assert!(!token.is_cancelled());
+        token.cancel();
+        assert!(token.is_cancelled());
     }
 }

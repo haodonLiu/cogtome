@@ -1,5 +1,4 @@
 /target
-Cargo.lock
 *.log
 *.swp
 *.swo
@@ -14,11 +13,9 @@ credentials.json
 # Web UI
 webui/node_modules
 webui/dist
-webui/package-lock.json
 .claude/worktrees/
 # Build artifacts
 tools/*/target/
 
 
 target/
-*.lock

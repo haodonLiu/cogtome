@@ -51,7 +51,6 @@ impl AssemblyManifest {
 #[derive(Debug, Clone)]
 pub struct Assembly {
     pub manifest: AssemblyManifest,
-    pub dir: PathBuf,
     pub workflow_path: PathBuf,
 }
 
@@ -63,7 +62,6 @@ impl Assembly {
 
         Ok(Self {
             manifest,
-            dir,
             workflow_path,
         })
     }
@@ -157,11 +155,6 @@ impl AssemblyRegistry {
     /// Get all assemblies
     pub fn all(&self) -> &HashMap<String, Assembly> {
         &self.assemblies
-    }
-
-    /// Check if an assembly exists
-    pub fn contains(&self, name: &str) -> bool {
-        self.assemblies.contains_key(name)
     }
 }
 

@@ -3,6 +3,21 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+#[derive(Debug, Clone, Copy, Deserialize, Default, PartialEq, Eq, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum SandboxKind {
+    #[default]
+    None,
+    Bwrap,
+    Namespace,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct SandboxConfig {
+    #[serde(default)]
+    pub default: SandboxKind,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CogtomeConfig {
     #[serde(default)]
@@ -12,9 +27,12 @@ pub struct CogtomeConfig {
     pub paths: PathsConfig,
     #[serde(default)]
     pub units: UnitsConfig,
+    #[serde(default)]
+    pub sandbox: SandboxConfig,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct RuntimeConfig {
     #[serde(default = "default_max_iterations")]
     pub max_iterations: u32,
@@ -32,6 +50,7 @@ impl Default for RuntimeConfig {
 }
 
 #[derive(Debug, Deserialize, Default)]
+#[allow(dead_code)]
 pub struct PathsConfig {
     pub units: Option<String>,
     pub motifs: Option<String>,
@@ -124,6 +143,7 @@ impl Default for CogtomeConfig {
             runtime: RuntimeConfig::default(),
             paths: PathsConfig::default(),
             units: UnitsConfig::default(),
+            sandbox: SandboxConfig::default(),
         }
     }
 }

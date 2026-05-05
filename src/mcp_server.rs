@@ -74,6 +74,7 @@ pub struct RootsCapability {
 /// Client capabilities (received during initialize)
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct ClientCapabilities {
     #[serde(default)]
     pub tools: Option<Value>,
@@ -90,6 +91,7 @@ pub struct ClientCapabilities {
 /// Initialize request params
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct InitializeParams {
     pub protocol_version: Option<String>,
     pub capabilities: ClientCapabilities,
@@ -104,6 +106,7 @@ pub struct ClientInfo {
 
 /// JSON-RPC 2.0 request
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct JsonRpcRequest {
     pub jsonrpc: String,
     pub id: Value,
@@ -135,10 +138,8 @@ pub struct JsonRpcError {
 /// MCP Server error codes
 mod error_codes {
     pub const PARSE_ERROR: i32 = -32700;
-    pub const INVALID_REQUEST: i32 = -32600;
     pub const METHOD_NOT_FOUND: i32 = -32601;
     pub const INVALID_PARAMS: i32 = -32602;
-    pub const INTERNAL_ERROR: i32 = -32603;
     pub const SERVER_NOT_INITIALIZED: i32 = -32002;
 }
 
@@ -176,6 +177,7 @@ pub struct PromptArgument {
 }
 
 /// MCP Server state
+#[allow(dead_code)]
 pub struct McpServer {
     assemblies: Arc<AssemblyRegistry>,
     units_dir: PathBuf,
@@ -677,8 +679,10 @@ impl McpServer {
                 PathBuf::from("."),
                 PathBuf::from("."),
             ),
+            units_base.to_path_buf(),
             30,
             HashMap::new(),
+            crate::engine::SandboxRegistry::new(),
         );
 
         let engine = GraphMotifEngine;

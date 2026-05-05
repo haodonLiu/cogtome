@@ -1,0 +1,15 @@
+{
+  "name": "daily-reflection",
+  "type": "motif",
+  "version": "1.0",
+  "description": "Merged reflection path: memory-indexer + task-extractor + pattern-finder + report-writer in one process with caching",
+  "required_units": [],
+  "python": "motif.py",
+  "input_schema": {
+    "memory_base_path": "string",
+    "days": "number",
+    "date": "string",
+    "mode": "string"
+  },
+  "output_fields": ["report", "summary", "date_range", "from_cache"]
+}
